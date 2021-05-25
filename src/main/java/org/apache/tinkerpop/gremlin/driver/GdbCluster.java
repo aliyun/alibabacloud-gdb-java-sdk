@@ -633,7 +633,6 @@ public final class GdbCluster {
          */
         public Builder serializer(final MessageSerializer serializer) {
             this.serializer = serializer;
-            logger.error("serializer - {}", serializer.toString());
             return this;
         }
 
