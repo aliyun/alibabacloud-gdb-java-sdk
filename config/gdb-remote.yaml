@@ -1,0 +1,37 @@
+# master endpoint
+hosts: [gds-master.graphdb.rds.aliyuncs.com]
+username: name
+password: password
+port: port
+connectionPool: {
+  maxSize: 4,
+  maxInProcessPerConnection: 8,
+  maxContentLength: 100000000,
+  resultIterationBatchSize: 64
+}
+
+
+readonlyHostsHA: {
+  # true: 读优先访问只读节点(失败再重试主), 写访问主节点;
+  # false: 读，写均访问主节点
+  state: true,
+
+  # readonly hosts endpoints
+  readonlyHosts: [gdr-read1.graphdb.rds.aliyuncs.com, gdr-read2.graphdb.rds.aliyuncs.com],
+
+
+  # request's max retry time before client's failure
+  retryCnt: 1,
+
+  # request default timeout to read only hosts(ms)
+  # -1: same as master, > 0: use defaultTimeOut
+  defaultTimeout: 5000,
+
+  # timeout policy, 0: kick out, 1: no-action
+  timeoutPolicy: 0
+}
+
+serializer: {
+  #className: org.apache.tinkerpop.gremlin.driver.ser.GraphSONMessageSerializerV3d0, config: { serializeResultToString: false}
+  className: org.apache.tinkerpop.gremlin.driver.ser.GraphBinaryMessageSerializerV1
+}

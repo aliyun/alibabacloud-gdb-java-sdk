@@ -1,0 +1,31 @@
+<assembly xmlns="http://maven.apache.org/plugins/maven-assembly-plugin/assembly/1.1.0"
+
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+
+          xsi:schemaLocation="http://maven.apache.org/plugins/maven-assembly-plugin/assembly/1.1.0 http://maven.apache.org/xsd/assembly-1.1.0.xsd">
+
+    <id></id>
+    <formats>
+        <format>tar.gz</format>    <!-- 设置打包后的格式为tar.gz -->
+        <format>dir</format>
+    </formats>
+
+    <includeBaseDirectory>true</includeBaseDirectory>
+
+    <fileSets> <!-- 要打包的文件 -->
+        <fileSet>
+            <includes>
+                <include>${project.basedir}/config/**</include>
+            </includes>
+        </fileSet>
+    </fileSets>
+
+    <dependencySets> <!-- 打包的依赖jar, 放置在lib下 -->
+        <dependencySet>
+            <outputDirectory>lib</outputDirectory>
+            <useProjectArtifact>true</useProjectArtifact>
+            <scope>runtime</scope>
+        </dependencySet>
+    </dependencySets>
+
+</assembly>

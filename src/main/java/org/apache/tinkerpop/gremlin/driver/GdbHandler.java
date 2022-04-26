@@ -56,8 +56,6 @@ import java.util.concurrent.ConcurrentMap;
 
 /**
  * Holder for internal handler classes used in constructing the channel pipeline.
- *
- * @author Stephen Mallette (http://stephen.genoprime.com)
  */
 final class GdbHandler {
 
@@ -124,6 +122,7 @@ final class GdbHandler {
             }
         }
 
+        @Override
         public void handle(final Callback[] callbacks) {
             for (Callback callback : callbacks) {
                 if (callback instanceof NameCallback) {
@@ -282,15 +281,19 @@ final class GdbHandler {
             pending.clear();
 
             // serialization exceptions should not close the channel - that's worth a retry
-            if (!IteratorUtils.anyMatch(ExceptionUtils.getThrowableList(cause).iterator(), t -> t instanceof SerializationException))
-                if (ctx.channel().isActive()) ctx.close();
+            if (!IteratorUtils.anyMatch(ExceptionUtils.getThrowableList(cause).iterator(), t -> t instanceof SerializationException)) {
+                if (ctx.channel().isActive()) {
+                    ctx.close();
+                }
+            }
         }
 
         private Map<String,Object> cleanStatusAttributes(final Map<String,Object> statusAttributes) {
             final Map<String,Object> m = new HashMap<>();
             statusAttributes.forEach((k,v) -> {
-                if (!k.equals(Tokens.STATUS_ATTRIBUTE_EXCEPTIONS) && !k.equals(Tokens.STATUS_ATTRIBUTE_STACK_TRACE))
+                if (!k.equals(Tokens.STATUS_ATTRIBUTE_EXCEPTIONS) && !k.equals(Tokens.STATUS_ATTRIBUTE_STACK_TRACE)) {
                     m.put(k,v);
+                }
             });
             return m;
         }

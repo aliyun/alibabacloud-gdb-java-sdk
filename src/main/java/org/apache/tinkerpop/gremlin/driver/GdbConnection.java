@@ -36,8 +36,6 @@ import java.util.concurrent.atomic.AtomicReference;
 
 /**
  * A single connection to a Gremlin Server instance.
- *
- * @author Stephen Mallette (http://stephen.genoprime.com)
  */
 final class GdbConnection {
     private static final Logger logger = LoggerFactory.getLogger(GdbConnection.class);
@@ -88,7 +86,9 @@ final class GdbConnection {
 
         connectionLabel = String.format("GdbConnection{host=%s}", pool.host);
 
-        if (cluster.isClosing()) throw new IllegalStateException("Cannot open a connection with the cluster after close() is called");
+        if (cluster.isClosing()) {
+            throw new IllegalStateException("Cannot open a connection with the cluster after close() is called");
+        }
 
         final Bootstrap b = this.cluster.getFactory().createBootstrap();
         try {
@@ -110,6 +110,17 @@ final class GdbConnection {
         }
     }
 
+    public GdbHost getHost() {
+        return pool.host;
+    }
+
+    public boolean isReadOnly() {
+        return pool.host.isReadOnly();
+    }
+
+    public GdbConnectionPool getPool() {
+        return pool;
+    }
     /**
      * A connection can only have so many things in process happening on it at once, where "in process" refers to
      * the maximum number of in-process requests less the number of pending responses.
@@ -151,14 +162,18 @@ final class GdbConnection {
     }
 
     public synchronized CompletableFuture<Void> closeAsync() {
-        if (isClosing()) return closeFuture.get();
+        if (isClosing()) {
+            return closeFuture.get();
+        }
 
         final CompletableFuture<Void> future = new CompletableFuture<>();
         closeFuture.set(future);
 
         // stop any pings being sent at the server for keep-alive
         final ScheduledFuture keepAlive = keepAliveFuture.get();
-        if (keepAlive != null) keepAlive.cancel(true);
+        if (keepAlive != null) {
+            keepAlive.cancel(true);
+        }
 
         // make sure all requests in the queue are fully processed before killing.  if they are then shutdown
         // can be immediate.  if not this method will signal the readCompleted future defined in the write()
@@ -167,10 +182,11 @@ final class GdbConnection {
         // will maintain a "pending" request, that won't quite ever go away.  The build up of such a dead requests
         // on a connection in the connection pool will force the pool to replace the connection for a fresh one.
         if (isOkToClose()) {
-            if (null == channel)
+            if (null == channel) {
                 future.complete(null);
-            else
+            } else {
                 shutdown(future);
+            }
         } else {
             // there may be some pending requests. schedule a job to wait for those to complete and then shutdown
             new CheckForPending(future).runUntilDone(cluster.executor(), 1000, TimeUnit.MILLISECONDS);
@@ -195,8 +211,9 @@ final class GdbConnection {
         final ChannelPromise requestPromise = channel.newPromise()
                 .addListener(f -> {
                     if (!f.isSuccess()) {
-                        if (logger.isDebugEnabled())
+                        if (logger.isDebugEnabled()) {
                             logger.debug(String.format("Write on connection %s failed", thisConnection.getConnectionInfo()), f.cause());
+                        }
 
                         handleConnectionCleanupOnError(thisConnection, f.cause());
 
@@ -252,7 +269,9 @@ final class GdbConnection {
 
             // try to cancel the old future if it's still un-executed - no need to ping since a new write has come
             // through on the connection
-            if (oldKeepAliveFuture != null) oldKeepAliveFuture.cancel(true);
+            if (oldKeepAliveFuture != null) {
+                oldKeepAliveFuture.cancel(true);
+            }
         }
 
         return requestPromise;
@@ -260,10 +279,13 @@ final class GdbConnection {
 
     public void returnToPool() {
         try {
-            if (pool != null) pool.returnConnection(this);
+            if (pool != null) {
+                pool.returnConnection(this);
+            }
         } catch (ConnectionException ce) {
-            if (logger.isDebugEnabled())
+            if (logger.isDebugEnabled()) {
                 logger.debug("Returned {} connection to {} but an error occurred - {}", this.getConnectionInfo(), pool, ce.getMessage());
+            }
         }
     }
 
@@ -278,7 +300,9 @@ final class GdbConnection {
      */
     private void handleConnectionCleanupOnError(final GdbConnection thisConnection, final Throwable t) {
         if (thisConnection.isDead()) {
-            if (pool != null) pool.replaceConnection(thisConnection);
+            if (pool != null) {
+                pool.replaceConnection(thisConnection);
+            }
         } else {
             thisConnection.returnToPool();
         }
@@ -293,8 +317,9 @@ final class GdbConnection {
      * shutdown if the returned result cleared up the last pending message.
      */
     private void tryShutdown() {
-        if (isClosing() && isOkToClose())
+        if (isClosing() && isOkToClose()) {
             shutdown(closeFuture.get());
+        }
     }
 
     private synchronized void shutdown(final CompletableFuture<Void> future) {
@@ -338,8 +363,9 @@ final class GdbConnection {
                 if (f.cause() != null) {
                     future.completeExceptionally(f.cause());
                 } else {
-                    if (logger.isDebugEnabled())
+                    if (logger.isDebugEnabled()) {
                         logger.debug("{} destroyed successfully.", connectionInfo);
+                    }
 
                     future.complete(null);
                 }

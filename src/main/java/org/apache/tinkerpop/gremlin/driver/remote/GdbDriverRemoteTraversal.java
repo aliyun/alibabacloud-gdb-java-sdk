@@ -45,8 +45,6 @@ import static org.apache.tinkerpop.gremlin.process.remote.RemoteConnection.GREML
  * typically iterated from {@link RemoteStep} where the {@link #nextTraverser()} method is called. While this class
  * provides implementations for both {@link #next()} and {@link #hasNext()} that unroll "bulked" results, those methods
  * are not called directly from with TinkerPop remoting.
- *
- * @author Stephen Mallette (http://stephen.genoprime.com)
  */
 public class GdbDriverRemoteTraversal<S, E> extends AbstractRemoteTraversal<S, E> {
 
@@ -59,7 +57,9 @@ public class GdbDriverRemoteTraversal<S, E> extends AbstractRemoteTraversal<S, E
         // require that the client have access to the Graph instance that produced the result. tests need that
         // attachment process to properly execute in full hence this little hack.
         if (attach) {
-            if (!conf.isPresent()) throw new IllegalStateException("Traverser can't be reattached for testing");
+            if (!conf.isPresent()) {
+                throw new IllegalStateException("Traverser can't be reattached for testing");
+            }
             final Graph graph = ((Supplier<Graph>) conf.get().getProperty(GREMLIN_REMOTE + "attachment")).get();
             this.traversers = new AttachingTraverserIterator<>(rs.iterator(), graph);
         } else {
@@ -86,8 +86,9 @@ public class GdbDriverRemoteTraversal<S, E> extends AbstractRemoteTraversal<S, E
 
     @Override
     public E next() {
-        if (0L == this.lastTraverser.bulk())
+        if (0L == this.lastTraverser.bulk()) {
             this.lastTraverser = this.traversers.next();
+        }
         if (1L == this.lastTraverser.bulk()) {
             final E temp = this.lastTraverser.get();
             this.lastTraverser = EmptyTraverser.instance();
@@ -102,9 +103,9 @@ public class GdbDriverRemoteTraversal<S, E> extends AbstractRemoteTraversal<S, E
     public Traverser.Admin<E> nextTraverser() {
         // the lastTraverser is initialized as "empty" at start of iteration so the initial pass through will
         // call next() to begin the iteration
-        if (0L == this.lastTraverser.bulk())
+        if (0L == this.lastTraverser.bulk()) {
             return this.traversers.next();
-        else {
+        } else {
             final Traverser.Admin<E> temp = this.lastTraverser;
             this.lastTraverser = EmptyTraverser.instance();
             return temp;
@@ -152,8 +153,9 @@ public class GdbDriverRemoteTraversal<S, E> extends AbstractRemoteTraversal<S, E
         @Override
         public Traverser.Admin<E> next() {
             final Traverser.Admin<E> traverser = super.next();
-            if (traverser.get() instanceof Attachable && !(traverser.get() instanceof Property))
+            if (traverser.get() instanceof Attachable && !(traverser.get() instanceof Property)) {
                 traverser.set((E) ((Attachable<Element>) traverser.get()).attach(Attachable.Method.get(graph)));
+            }
             return traverser;
         }
     }

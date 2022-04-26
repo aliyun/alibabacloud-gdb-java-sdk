@@ -42,8 +42,6 @@ import java.util.concurrent.TimeUnit;
 /**
  * Client-side channel initializer interface.  It is responsible for constructing the Netty {@code ChannelPipeline}
  * used by the client to connect and send message to Gremlin Server.
- *
- * @author Stephen Mallette (http://stephen.genoprime.com)
  */
 public interface GdbChannelizer extends ChannelHandler {
 
@@ -175,7 +173,9 @@ public interface GdbChannelizer extends ChannelHandler {
          */
         @Override
         public void close(final Channel channel) {
-            if (channel.isOpen()) channel.writeAndFlush(new CloseWebSocketFrame());
+            if (channel.isOpen()) {
+                channel.writeAndFlush(new CloseWebSocketFrame());
+            }
         }
 
         @Override
@@ -187,11 +187,13 @@ public interface GdbChannelizer extends ChannelHandler {
         @Override
         public void configure(final ChannelPipeline pipeline) {
             final String scheme = connection.getUri().getScheme();
-            if (!"ws".equalsIgnoreCase(scheme) && !"wss".equalsIgnoreCase(scheme))
+            if (!"ws".equalsIgnoreCase(scheme) && !"wss".equalsIgnoreCase(scheme)) {
                 throw new IllegalStateException("Unsupported scheme (only ws: or wss: supported): " + scheme);
+            }
 
-            if (!supportsSsl() && "wss".equalsIgnoreCase(scheme))
+            if (!supportsSsl() && "wss".equalsIgnoreCase(scheme)) {
                 throw new IllegalStateException("To use wss scheme ensure that enableSsl is set to true in configuration");
+            }
 
             final int maxContentLength = cluster.connectionPoolSettings().maxContentLength;
             handler = new WebSocketClientHandler(

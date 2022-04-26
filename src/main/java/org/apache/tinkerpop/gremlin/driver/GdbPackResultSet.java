@@ -19,6 +19,8 @@
 package org.apache.tinkerpop.gremlin.driver;
 
 import org.apache.tinkerpop.gremlin.driver.message.RequestMessage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -34,91 +36,81 @@ import java.util.stream.Stream;
 import java.util.stream.StreamSupport;
 
 /**
- * A {@code ResultSet} is returned from the submission of a Gremlin script to the server and represents the
- * results provided by the server.  The results from the server are streamed into the {@code ResultSet} and
- * therefore may not be available immediately.  As such, {@code ResultSet} provides access to a a number
- * of functions that help to work with the asynchronous nature of the data streaming back.  Data from results
- * is stored in an {@link Result} which can be used to retrieve the item once it is on the client side.
- * <p/>
- * Note that a {@code ResultSet} is a forward-only stream only so depending on how the methods are called and
- * interacted with, it is possible to return partial bits of the total response (e.g. calling {@link #one()} followed
- * by {@link #all()} will make it so that the {@link List} of results returned from {@link #all()} have one
- * {@link Result} missing from the total set as it was already retrieved by {@link #one}.
- * <p/>
- * This class is not thread-safe.
+ *
+ * Results has been filled up into the result list, just return to upper user program!
  */
-public class GdbResultSet implements Iterable<Result> {
-    protected final ResultQueue resultQueue;
-    protected final ExecutorService executor;
-    protected final RequestMessage originalRequestMessage;
-    protected final GdbHost host;
+public final class GdbPackResultSet extends GdbResultSet {
+    private static final Logger logger = LoggerFactory.getLogger(GdbConnectionPool.class);
 
-    protected final CompletableFuture<Void> readCompleted;
-
-    public GdbResultSet(final ResultQueue resultQueue, final ExecutorService executor,
-                     final CompletableFuture<Void> readCompleted, final RequestMessage originalRequestMessage,
-                     final GdbHost host) {
-        this.executor = executor;
-        this.host = host;
-        this.resultQueue = resultQueue;
-        this.readCompleted = readCompleted;
-        this.originalRequestMessage = originalRequestMessage;
+    private final List<Result>  results;
+    private int fromIndex = 0;
+    public GdbPackResultSet(final ResultQueue resultQueue, final ExecutorService executor,
+                                                         final CompletableFuture<Void> readCompleted, final RequestMessage requestMessage,
+                                                         final GdbHost host, List<Result> results) {
+        super(resultQueue, executor, readCompleted, requestMessage, host);
+        this.results = results;
     }
 
+    @Override
     public RequestMessage getOriginalRequestMessage() {
-        return originalRequestMessage;
+        return super.originalRequestMessage;
     }
 
-    public GdbHost getHost() {
-        return host;
-    }
+
 
     /**
      * Returns a future that will complete when {@link #allItemsAvailable()} is {@code true} and will contain the
      * attributes from the response.
      */
+    @Override
     public CompletableFuture<Map<String,Object>> statusAttributes() {
         final CompletableFuture<Map<String,Object>> attrs = new CompletableFuture<>();
-        readCompleted.thenRun(() -> attrs.complete(null == resultQueue.getStatusAttributes() ? Collections.emptyMap() : resultQueue.getStatusAttributes()));
+        attrs.complete(Collections.emptyMap());
         return attrs;
     }
 
     /**
      * Determines if all items have been returned to the client.
      */
+    @Override
     public boolean allItemsAvailable() {
-        return readCompleted.isDone();
+        return true;
     }
 
     /**
      * Returns a future that will complete when all items have been returned from the server.
      */
+    @Override
     public CompletableFuture<Void> allItemsAvailableAsync() {
         final CompletableFuture<Void> allAvailable = new CompletableFuture<>();
-        readCompleted.thenRun(() -> allAvailable.complete(null));
-        readCompleted.exceptionally(t -> {
-            allAvailable.completeExceptionally(t);
-            return null;
-        });
+        allAvailable.complete(null);
         return allAvailable;
     }
 
     /**
      * Gets the number of items available on the client.
      */
+    @Override
     public int getAvailableItemCount() {
-        return resultQueue.size();
+        return results.size();
     }
 
     /**
      * Get the next {@link Result} from the stream, blocking until one is available.
      */
-    public Result one()  {
-        final List<Result> results = some(1).join();
+    @Override
+    public Result one() {
+        final List<Result> results;
+        try {
+            results = some(1).get();
 
-        assert results.size() <= 1;
+            assert results.size() <= 1;
 
-        return results.size() == 1 ? results.get(0) : null;
+            return results.size() == 1 ? results.get(0) : null;
+        } catch (Exception e) {
+            logger.warn("exception - {}", e.getMessage());
+            return null;
+        }
     }
 
     /**
@@ -126,8 +118,20 @@ public class GdbResultSet implements Iterable<Result> {
      * number returned will be equal to or less than that number.  They will only be less if the stream is
      * completed and there are less than that number specified available.
      */
+    @Override
     public CompletableFuture<List<Result>> some(final int items) {
-        return resultQueue.await(items);
+        final CompletableFuture<List<Result>> allAvailable = new CompletableFuture<>();
+        if (fromIndex < results.size()) {
+            int toIndex = fromIndex + items;
+            if (toIndex > results.size()) {
+                toIndex = results.size();
+            }
+            allAvailable.complete(results.subList(fromIndex, toIndex));
+            fromIndex = toIndex;
+        } else {
+            allAvailable.complete(new ArrayList<>());
+        }
+        return allAvailable;
     }
 
     /**
@@ -136,17 +140,15 @@ public class GdbResultSet implements Iterable<Result> {
      * retrieving all remaining items in the set.  For large result sets it is preferred to use
      * {@link Iterator} or {@link Stream} options, as the results will be held in memory at once.
      */
+    @Override
     public CompletableFuture<List<Result>> all() {
-        return readCompleted.thenApplyAsync(it -> {
-            final List<Result> list = new ArrayList<>();
-            resultQueue.drainTo(list);
-            return list;
-        }, executor);
+        return some(results.size());
     }
 
     /**
      * Stream items with a blocking iterator.
      */
+    @Override
     public Stream<Result> stream() {
         return StreamSupport.stream(Spliterators.spliteratorUnknownSize(iterator(),
                 Spliterator.IMMUTABLE | Spliterator.SIZED), false);

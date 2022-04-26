@@ -19,6 +19,8 @@
 package org.apache.tinkerpop.gremlin.driver;
 
 import org.apache.tinkerpop.gremlin.driver.message.RequestMessage;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.util.ArrayList;
 import java.util.Collection;
@@ -30,10 +32,9 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * Provides a method for selecting the host from a {@link Cluster}.
- *
- * @author Stephen Mallette (http://stephen.genoprime.com)
  */
 public interface GdbLoadBalancingStrategy extends GdbHost.Listener {
+    static final Logger logger = LoggerFactory.getLogger(GdbLoadBalancingStrategy.class);
 
     /**
      * Initialize the strategy with the {@link Cluster} instance and the expected host list.
@@ -43,40 +44,53 @@ public interface GdbLoadBalancingStrategy extends GdbHost.Listener {
     /**
      * Provide an ordered list of hosts to send the given {@link RequestMessage} to.
      */
-    public Iterator<GdbHost> select(final RequestMessage msg);
+    public Iterator<GdbHost> select(final RequestMessage msg, boolean isReqRead, Collection<GdbHost> deadHosts);
 
     /**
      * A simple round-robin strategy that simply selects the next host in the {@link Cluster} to send the
      * {@link RequestMessage} to.
      */
     public static class RoundRobin implements GdbLoadBalancingStrategy {
-
-        private final CopyOnWriteArrayList<GdbHost> availableGdbHosts = new CopyOnWriteArrayList<>();
+        private final CopyOnWriteArrayList<GdbHost> availableMasterHosts = new CopyOnWriteArrayList<>();
+        private final CopyOnWriteArrayList<GdbHost> availableReadonlyHosts = new CopyOnWriteArrayList<>();
         private final AtomicInteger index = new AtomicInteger();
 
         @Override
         public void initialize(final Cluster cluster, final Collection<GdbHost> hosts) {
-            this.availableGdbHosts.addAll(hosts);
+            this.availableMasterHosts.addAll(hosts);
             this.index.set(new Random().nextInt(Math.max(hosts.size(), 1)));
         }
 
         @Override
-        public Iterator<GdbHost> select(final RequestMessage msg) {
+        public Iterator<GdbHost> select(final RequestMessage msg, boolean isReqRead, Collection<GdbHost> deadHosts) {
             final List<GdbHost> hosts = new ArrayList<>();
 
-            // a host could be marked as dead in which case we dont need to send messages to it - just skip it for
-            // now. it might come back online later
-            availableGdbHosts.iterator().forEachRemaining(host -> {
-                if (host.isAvailable()) hosts.add(host);
-            });
+            // if availableReadonlyHosts is not empty, readonly request will more inclined to readonly hosts;
+            if (isReqRead && (! availableReadonlyHosts.isEmpty())) {
+                availableReadonlyHosts.iterator().forEachRemaining(host -> {
+                    if (host.isAvailable() && (! deadHosts.contains(host))) {
+                        hosts.add(host);
+                    }
+                });
+            }
+
+            if (hosts.isEmpty()) {
+                // a host could be marked as dead in which case we dont need to send messages to it - just skip it for
+                // now. it might come back online later
+                availableMasterHosts.iterator().forEachRemaining(host -> {
+                    if (host.isAvailable() && (! deadHosts.contains(host))) {
+                        hosts.add(host);
+                    }
+                });
+            }
 
             final int startIndex = index.getAndIncrement();
 
-            if (startIndex > Integer.MAX_VALUE - 10000)
+            if (startIndex > Integer.MAX_VALUE - 10000) {
                 index.set(0);
+            }
 
             return new Iterator<GdbHost>() {
-
                 private int currentIndex = startIndex;
                 private int remainingGdbHosts = hosts.size();
 
@@ -89,8 +103,9 @@ public interface GdbLoadBalancingStrategy extends GdbHost.Listener {
                 public GdbHost next() {
                     remainingGdbHosts--;
                     int c = currentIndex++ % hosts.size();
-                    if (c < 0)
+                    if (c < 0) {
                         c += hosts.size();
+                    }
                     return hosts.get(c);
                 }
             };
@@ -98,12 +113,22 @@ public interface GdbLoadBalancingStrategy extends GdbHost.Listener {
 
         @Override
         public void onAvailable(final GdbHost host) {
-            this.availableGdbHosts.addIfAbsent(host);
+            logger.warn("onAvailable on {}", host);
+            if (host.isMaster()) {
+                this.availableMasterHosts.addIfAbsent(host);
+            } else {
+                this.availableReadonlyHosts.addIfAbsent(host);
+            }
         }
 
         @Override
         public void onUnavailable(final GdbHost host) {
-            this.availableGdbHosts.remove(host);
+            logger.warn("onUnavailable on {}", host);
+            if (host.isMaster()) {
+                this.availableMasterHosts.remove(host);
+            } else {
+                this.availableReadonlyHosts.remove(host);
+            }
         }
 
         @Override

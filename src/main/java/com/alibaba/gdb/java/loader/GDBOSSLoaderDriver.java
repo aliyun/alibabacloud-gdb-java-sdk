@@ -1,9 +1,20 @@
 /*
- * (C)  2019-present Alibaba Group Holding Limited.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
 package com.alibaba.gdb.java.loader;
 
@@ -11,8 +22,13 @@ package com.alibaba.gdb.java.loader;
 import org.apache.tinkerpop.gremlin.driver.GdbSettings;
 import org.glassfish.jersey.client.ClientConfig;
 import org.glassfish.jersey.client.authentication.HttpAuthenticationFeature;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
-import javax.ws.rs.client.*;
+import javax.ws.rs.client.Client;
+import javax.ws.rs.client.ClientBuilder;
+import javax.ws.rs.client.Entity;
+import javax.ws.rs.client.WebTarget;
 import javax.ws.rs.core.GenericType;
 import javax.ws.rs.core.MediaType;
 import javax.ws.rs.core.Response;
@@ -20,12 +36,9 @@ import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-
 import static org.apache.http.HttpStatus.SC_OK;
 
-class GDBOSSLoaderDriver {
+public class GDBOSSLoaderDriver {
 	private final String LOADER_ID = "loaderId";
 	private static final Logger logger = LoggerFactory.getLogger(GDBOSSLoaderDriver.class);
 
@@ -40,11 +53,11 @@ class GDBOSSLoaderDriver {
 		Client client = ClientBuilder.newClient(config);
 		loaderClient = client.target("http://" + host + ":" + port).path(loaderPath);
 
-		logger.info("init loader driver with {}:{}", host, port);
+		logger.info("init test.loader driver with {}:{}", host, port);
 	}
 
 	/**
-	 * get loader task list {@link LoaderList}
+	 * get test.loader task list {@link LoaderList}
 	 */
 	public LoaderList getLoaderList() {
 		logger.debug("request load task list");
@@ -53,7 +66,7 @@ class GDBOSSLoaderDriver {
 	}
 
 	/**
-	 * get loader task detail, include records, errors, time and so on {@link LoaderDetail}
+	 * get test.loader task detail, include records, errors, time and so on {@link LoaderDetail}
 	 * @param loaderId the task id in GDB server
 	 * @throws LoaderExecption when request get errors
 	 */

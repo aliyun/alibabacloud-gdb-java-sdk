@@ -32,8 +32,6 @@ import java.util.concurrent.CompletableFuture;
 
 /**
  * Java driver implementation of {@link TraversalSideEffects}. This class is not thread safe.
- *
- * @author Stephen Mallette (http://stephen.genoprime.com)
  */
 public class GdbDriverRemoteTraversalSideEffects extends AbstractRemoteTraversalSideEffects {
 
@@ -90,11 +88,15 @@ public class GdbDriverRemoteTraversalSideEffects extends AbstractRemoteTraversal
         // the error.
         ready.join();
 
-        if (!keys().contains(key)) throw Exceptions.sideEffectKeyDoesNotExist(key);
+        if (!keys().contains(key)) {
+            throw Exceptions.sideEffectKeyDoesNotExist(key);
+        }
 
         if (!sideEffects.containsKey(key)) {
 
-            if (closed) throw new IllegalStateException("Traversal has been closed - no new side-effects can be retrieved");
+            if (closed) {
+                throw new IllegalStateException("Traversal has been closed - no new side-effects can be retrieved");
+            }
 
             // specify the ARGS_HOST so that the LoadBalancingStrategy is subverted and the connection is forced
             // from the specified host (i.e. the host from the previous request as that host will hold the side-effects)
@@ -130,7 +132,9 @@ public class GdbDriverRemoteTraversalSideEffects extends AbstractRemoteTraversal
         // the error.
         ready.join();
 
-        if (closed && !retrievedAllKeys) throw new IllegalStateException("Traversal has been closed - side-effect keys cannot be retrieved");
+        if (closed && !retrievedAllKeys) {
+            throw new IllegalStateException("Traversal has been closed - side-effect keys cannot be retrieved");
+        }
 
         if (!retrievedAllKeys) {
             // specify the ARGS_HOST so that the LoadBalancingStrategy is subverted and the connection is forced
@@ -140,8 +144,9 @@ public class GdbDriverRemoteTraversalSideEffects extends AbstractRemoteTraversal
                     .addArg(Tokens.ARGS_HOST, host)
                     .processor("traversal").create();
             try {
-                if (keys.equals(Collections.emptySet()))
+                if (keys.equals(Collections.emptySet())) {
                     keys = new HashSet<>();
+                }
 
                 client.submitAsync(msg).get().all().get().forEach(r -> keys.add(r.getString()));
 

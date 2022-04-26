@@ -24,7 +24,15 @@ import org.apache.tinkerpop.gremlin.process.traversal.Traverser;
 import org.apache.tinkerpop.gremlin.process.traversal.step.util.BulkSet;
 import org.javatuples.Pair;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Queue;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -33,8 +41,6 @@ import java.util.concurrent.atomic.AtomicReference;
 /**
  * A queue of incoming {@link Result} objects.  The queue is updated by the {@link GdbHandler.GremlinResponseHandler}
  * until a response terminator is identified.
- *
- * @author Stephen Mallette (http://stephen.genoprime.com)
  */
 @SuppressWarnings("ThrowableResultOfMethodCallIgnored")
 final class ResultQueue {
@@ -77,37 +83,48 @@ final class ResultQueue {
     public void addSideEffect(final String aggregateTo, final Object sideEffectValue) {
         switch (aggregateTo) {
             case Tokens.VAL_AGGREGATE_TO_BULKSET:
-                if (!(sideEffectValue instanceof Traverser.Admin))
+                if (!(sideEffectValue instanceof Traverser.Admin)) {
                     throw new IllegalStateException(String.format("Side-effect value %s is a %s which does not aggregate to %s",
                             sideEffectValue, sideEffectValue.getClass().getSimpleName(), aggregateTo));
+                }
 
-                if (null == aggregatedResult) aggregatedResult = new BulkSet();
+                if (null == aggregatedResult) {
+                    aggregatedResult = new BulkSet();
+                }
 
                 final BulkSet<Object> bs = validate(aggregateTo, BulkSet.class);
                 final Traverser.Admin traverser = (Traverser.Admin) sideEffectValue;
                 bs.add(traverser.get(), traverser.bulk());
                 break;
             case Tokens.VAL_AGGREGATE_TO_LIST:
-                if (null == aggregatedResult) aggregatedResult = new ArrayList();
+                if (null == aggregatedResult) {
+                    aggregatedResult = new ArrayList();
+                }
                 final List<Object> list = validate(aggregateTo, List.class);
                 list.add(sideEffectValue);
                 break;
             case Tokens.VAL_AGGREGATE_TO_SET:
-                if (null == aggregatedResult) aggregatedResult = new HashSet();
+                if (null == aggregatedResult) {
+                    aggregatedResult = new HashSet();
+                }
                 final Set<Object> set = validate(aggregateTo, Set.class);
                 set.add(sideEffectValue);
                 break;
             case Tokens.VAL_AGGREGATE_TO_MAP:
-                if (!(sideEffectValue instanceof Map.Entry) && !(sideEffectValue instanceof Map))
+                if (!(sideEffectValue instanceof Map.Entry) && !(sideEffectValue instanceof Map)) {
                     throw new IllegalStateException(String.format("Side-effect value %s is a %s which does not aggregate to %s",
                             sideEffectValue, sideEffectValue.getClass().getSimpleName(), aggregateTo));
+                }
 
                 // some serialization formats (e.g. graphson) may deserialize a Map.Entry to a Map with a single entry
-                if (sideEffectValue instanceof Map && ((Map) sideEffectValue).size() != 1)
+                if (sideEffectValue instanceof Map && ((Map) sideEffectValue).size() != 1) {
                     throw new IllegalStateException(String.format("Side-effect value %s is a %s which does not aggregate to %s as it is a Map that does not have one entry",
                             sideEffectValue, sideEffectValue.getClass().getSimpleName(), aggregateTo));
+                }
 
-                if (null == aggregatedResult) aggregatedResult =  new HashMap();
+                if (null == aggregatedResult) {
+                    aggregatedResult =  new HashMap();
+                }
 
                 final Map<Object,Object > m = validate(aggregateTo, Map.class);
                 final Map.Entry entry = sideEffectValue instanceof Map.Entry ?
@@ -115,7 +132,9 @@ final class ResultQueue {
                 m.put(entry.getKey(), entry.getValue());
                 break;
             case Tokens.VAL_AGGREGATE_TO_NONE:
-                if (null == aggregatedResult) aggregatedResult = sideEffectValue;
+                if (null == aggregatedResult) {
+                    aggregatedResult = sideEffectValue;
+                }
                 break;
             default:
                 throw new IllegalStateException(String.format("%s is an invalid value for %s", aggregateTo, Tokens.ARGS_AGGREGATE_TO));
@@ -123,9 +142,10 @@ final class ResultQueue {
     }
 
     private <V> V validate(final String aggregateTo, final Class<?> expected) {
-        if (!(expected.isAssignableFrom(aggregatedResult.getClass())))
+        if (!(expected.isAssignableFrom(aggregatedResult.getClass()))) {
             throw new IllegalStateException(String.format("Side-effect \"%s\" contains the type %s that is not acceptable for %s",
                     aggregatedResult.getClass().getSimpleName(), aggregateTo));
+        }
 
         return (V) aggregatedResult;
     }
@@ -140,12 +160,16 @@ final class ResultQueue {
     }
 
     public int size() {
-        if (error.get() != null) throw new RuntimeException(error.get());
+        if (error.get() != null) {
+            throw new RuntimeException(error.get());
+        }
         return this.resultLinkedBlockingQueue.size();
     }
 
     public boolean isEmpty() {
-        if (error.get() != null) throw new RuntimeException(error.get());
+        if (error.get() != null) {
+            throw new RuntimeException(error.get());
+        }
         return this.size() == 0;
     }
 
@@ -154,15 +178,18 @@ final class ResultQueue {
     }
 
     void drainTo(final Collection<Result> collection) {
-        if (error.get() != null) throw new RuntimeException(error.get());
+        if (error.get() != null) {
+            throw new RuntimeException(error.get());
+        }
         resultLinkedBlockingQueue.drainTo(collection);
     }
 
     void markComplete(final Map<String,Object> statusAttributes) {
         // if there was some aggregation performed in the queue then the full object is hanging out waiting to be
         // added to the ResultSet
-        if (aggregatedResult != null)
+        if (aggregatedResult != null) {
             add(new Result(aggregatedResult));
+        }
 
         this.statusAttributes = null == statusAttributes ? Collections.emptyMap() : statusAttributes;
 
@@ -197,10 +224,11 @@ final class ResultQueue {
             // it's important to check for error here because a future may have already been queued in "waiting" prior
             // to the first response back from the server. if that happens, any "waiting" futures should be completed
             // exceptionally otherwise it will look like success.
-            if (null == error.get())
+            if (null == error.get()) {
                 future.complete(results);
-            else
+            } else {
                 future.completeExceptionally(error.get());
+            }
 
             waiting.remove(nextWaiting);
         }

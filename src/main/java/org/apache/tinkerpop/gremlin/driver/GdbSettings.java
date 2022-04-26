@@ -31,13 +31,11 @@ import java.util.stream.Collectors;
 
 /**
  * GdbSettings for the {@link Cluster} and its related components.
- *
- * @author Stephen Mallette (http://stephen.genoprime.com)
  */
 final public class GdbSettings {
 
     /**
-     * The port of the Gremlin Server to connect to which defaults to {@code 8192}. The same port will be applied for
+     * The port of the Gremlin Server to connect to which defaults to {@code 8182}. The same port will be applied for
      * all {@link #hosts}.
      */
     public int port = 8182;
@@ -62,6 +60,8 @@ final public class GdbSettings {
      * GdbSettings for connections and connection pool.
      */
     public ConnectionPoolSettings connectionPool = new ConnectionPoolSettings();
+
+    public ReadonlyHostsHA readonlyHostsHA = new ReadonlyHostsHA();
 
     /**
      * The size of the thread pool defaulted to the number of available processors.
@@ -117,36 +117,45 @@ final public class GdbSettings {
     public static GdbSettings from(final Configuration conf) {
         final GdbSettings settings = new GdbSettings();
 
-        if (conf.containsKey("port"))
+        if (conf.containsKey("port")) {
             settings.port = conf.getInt("port");
+        }
 
-        if (conf.containsKey("nioPoolSize"))
+        if (conf.containsKey("nioPoolSize")) {
             settings.nioPoolSize = conf.getInt("nioPoolSize");
+        }
 
-        if (conf.containsKey("workerPoolSize"))
+        if (conf.containsKey("workerPoolSize")) {
             settings.workerPoolSize = conf.getInt("workerPoolSize");
+        }
 
-        if (conf.containsKey("username"))
+        if (conf.containsKey("username")) {
             settings.username = conf.getString("username");
+        }
 
-        if (conf.containsKey("password"))
+        if (conf.containsKey("password")) {
             settings.password = conf.getString("password");
+        }
 
-        if (conf.containsKey("jaasEntry"))
+        if (conf.containsKey("jaasEntry")) {
             settings.jaasEntry = conf.getString("jaasEntry");
+        }
 
-        if (conf.containsKey("protocol"))
+        if (conf.containsKey("protocol")) {
             settings.protocol = conf.getString("protocol");
+        }
 
-        if (conf.containsKey("hosts"))
+        if (conf.containsKey("hosts")) {
             settings.hosts = conf.getList("hosts").stream().map(Object::toString).collect(Collectors.toList());
+        }
 
         if (conf.containsKey("serializer.className")) {
             final SerializerSettings serializerSettings = new SerializerSettings();
             final Configuration serializerConf = conf.subset("serializer");
 
-            if (serializerConf.containsKey("className"))
+            if (serializerConf.containsKey("className")) {
                 serializerSettings.className = serializerConf.getString("className");
+            }
 
             final Configuration serializerConfigConf = conf.subset("serializer.config");
             if (IteratorUtils.count(serializerConfigConf.getKeys()) > 0) {
@@ -159,94 +168,157 @@ final public class GdbSettings {
             settings.serializer = serializerSettings;
         }
 
+        final Configuration readonlyHostsHAConf = conf.subset("readonlyHostsHA");
+        if (IteratorUtils.count(readonlyHostsHAConf.getKeys()) > 0) {
+            if (readonlyHostsHAConf.containsKey("state")) {
+                settings.readonlyHostsHA.state = readonlyHostsHAConf.getBoolean("state");
+            }
+
+            if (readonlyHostsHAConf.containsKey("readonlyHosts")) {
+                settings.readonlyHostsHA.readonlyHosts = readonlyHostsHAConf.getList("readonlyHosts").stream().map(t -> String.valueOf(t)).collect(Collectors.toList());
+            }
+
+            if (readonlyHostsHAConf.containsKey("retryCnt")) {
+                settings.readonlyHostsHA.retryCnt = readonlyHostsHAConf.getInt("retryCnt");
+            }
+
+
+            if (readonlyHostsHAConf.containsKey("defaultTimeOut")) {
+                settings.readonlyHostsHA.defaultTimeout = readonlyHostsHAConf.getInt("defaultTimeOut");
+            }
+
+            if (readonlyHostsHAConf.containsKey("timeoutPolicy")) {
+                settings.readonlyHostsHA.timeoutPolicy = readonlyHostsHAConf.getInt("timeoutPolicy");
+            }
+        }
+
         final Configuration connectionPoolConf = conf.subset("connectionPool");
         if (IteratorUtils.count(connectionPoolConf.getKeys()) > 0) {
             final ConnectionPoolSettings cpSettings = new ConnectionPoolSettings();
 
-            if (connectionPoolConf.containsKey("channelizer"))
+            if (connectionPoolConf.containsKey("channelizer")) {
                 cpSettings.channelizer = connectionPoolConf.getString("channelizer");
+            }
 
-            if (connectionPoolConf.containsKey("enableSsl"))
+            if (connectionPoolConf.containsKey("enableSsl")) {
                 cpSettings.enableSsl = connectionPoolConf.getBoolean("enableSsl");
+            }
 
-            if (connectionPoolConf.containsKey("keyCertChainFile"))
+            if (connectionPoolConf.containsKey("keyCertChainFile")) {
                 cpSettings.keyCertChainFile = connectionPoolConf.getString("keyCertChainFile");
+            }
 
-            if (connectionPoolConf.containsKey("keyFile"))
+            if (connectionPoolConf.containsKey("keyFile")) {
                 cpSettings.keyFile = connectionPoolConf.getString("keyFile");
+            }
 
-            if (connectionPoolConf.containsKey("keyPassword"))
+            if (connectionPoolConf.containsKey("keyPassword")) {
                 cpSettings.keyPassword = connectionPoolConf.getString("keyPassword");
+            }
 
-            if (connectionPoolConf.containsKey("trustCertChainFile"))
+            if (connectionPoolConf.containsKey("trustCertChainFile")) {
                 cpSettings.trustCertChainFile = connectionPoolConf.getString("trustCertChainFile");
+            }
 
-            if (connectionPoolConf.containsKey("keyStore"))
+            if (connectionPoolConf.containsKey("keyStore")) {
                 cpSettings.keyStore = connectionPoolConf.getString("keyStore");
+            }
 
-            if (connectionPoolConf.containsKey("keyStorePassword"))
+            if (connectionPoolConf.containsKey("keyStorePassword")) {
                 cpSettings.keyStorePassword = connectionPoolConf.getString("keyStorePassword");
+            }
 
-            if (connectionPoolConf.containsKey("keyStoreType"))
+            if (connectionPoolConf.containsKey("keyStoreType")) {
                 cpSettings.keyStoreType = connectionPoolConf.getString("keyStoreType");
+            }
 
-            if (connectionPoolConf.containsKey("trustStore"))
+            if (connectionPoolConf.containsKey("trustStore")) {
                 cpSettings.trustStore = connectionPoolConf.getString("trustStore");
+            }
 
-            if (connectionPoolConf.containsKey("trustStorePassword"))
+            if (connectionPoolConf.containsKey("trustStorePassword")) {
                 cpSettings.trustStorePassword = connectionPoolConf.getString("trustStorePassword");
+            }
 
-            if (connectionPoolConf.containsKey("sslEnabledProtocols"))
+            if (connectionPoolConf.containsKey("sslEnabledProtocols")) {
                 cpSettings.sslEnabledProtocols = connectionPoolConf.getList("sslEnabledProtocols").stream().map(Object::toString)
                         .collect(Collectors.toList());
+            }
 
-            if (connectionPoolConf.containsKey("sslCipherSuites"))
+            if (connectionPoolConf.containsKey("sslCipherSuites")) {
                 cpSettings.sslCipherSuites = connectionPoolConf.getList("sslCipherSuites").stream().map(Object::toString)
                         .collect(Collectors.toList());
+            }
 
-            if (connectionPoolConf.containsKey("sslSkipCertValidation"))
+            if (connectionPoolConf.containsKey("sslSkipCertValidation")) {
                 cpSettings.sslSkipCertValidation = connectionPoolConf.getBoolean("sslSkipCertValidation");
+            }
 
-            if (connectionPoolConf.containsKey("minSize"))
+            if (connectionPoolConf.containsKey("minSize")) {
                 cpSettings.minSize = connectionPoolConf.getInt("minSize");
+            }
 
-            if (connectionPoolConf.containsKey("maxSize"))
+            if (connectionPoolConf.containsKey("maxSize")) {
                 cpSettings.maxSize = connectionPoolConf.getInt("maxSize");
+            }
 
-            if (connectionPoolConf.containsKey("minSimultaneousUsagePerConnection"))
+            if (connectionPoolConf.containsKey("minSimultaneousUsagePerConnection")) {
                 cpSettings.minSimultaneousUsagePerConnection = connectionPoolConf.getInt("minSimultaneousUsagePerConnection");
+            }
 
-            if (connectionPoolConf.containsKey("maxSimultaneousUsagePerConnection"))
+            if (connectionPoolConf.containsKey("maxSimultaneousUsagePerConnection")) {
                 cpSettings.maxSimultaneousUsagePerConnection = connectionPoolConf.getInt("maxSimultaneousUsagePerConnection");
+            }
 
-            if (connectionPoolConf.containsKey("maxInProcessPerConnection"))
+            if (connectionPoolConf.containsKey("maxInProcessPerConnection")) {
                 cpSettings.maxInProcessPerConnection = connectionPoolConf.getInt("maxInProcessPerConnection");
+            }
 
-            if (connectionPoolConf.containsKey("minInProcessPerConnection"))
+            if (connectionPoolConf.containsKey("minInProcessPerConnection")) {
                 cpSettings.minInProcessPerConnection = connectionPoolConf.getInt("minInProcessPerConnection");
+            }
 
-            if (connectionPoolConf.containsKey("maxWaitForConnection"))
+            if (connectionPoolConf.containsKey("maxWaitForConnection")) {
                 cpSettings.maxWaitForConnection = connectionPoolConf.getInt("maxWaitForConnection");
+            }
 
-            if (connectionPoolConf.containsKey("maxContentLength"))
+            if (connectionPoolConf.containsKey("maxContentLength")) {
                 cpSettings.maxContentLength = connectionPoolConf.getInt("maxContentLength");
+            }
 
-            if (connectionPoolConf.containsKey("reconnectInterval"))
+            if (connectionPoolConf.containsKey("reconnectInterval")) {
                 cpSettings.reconnectInterval = connectionPoolConf.getInt("reconnectInterval");
+            }
 
-            if (connectionPoolConf.containsKey("resultIterationBatchSize"))
+            if (connectionPoolConf.containsKey("resultIterationBatchSize")) {
                 cpSettings.resultIterationBatchSize = connectionPoolConf.getInt("resultIterationBatchSize");
+            }
 
-            if (connectionPoolConf.containsKey("keepAliveInterval"))
+            if (connectionPoolConf.containsKey("keepAliveInterval")) {
                 cpSettings.keepAliveInterval = connectionPoolConf.getLong("keepAliveInterval");
+            }
 
-            if (connectionPoolConf.containsKey("validationRequest"))
+            if (connectionPoolConf.containsKey("validationRequest")) {
                 cpSettings.validationRequest = connectionPoolConf.getString("validationRequest");
+            }
 
             settings.connectionPool = cpSettings;
         }
 
         return settings;
+    }
+
+    static class ReadonlyHostsHA {
+        public boolean state = false;
+
+        public List<String> readonlyHosts = new ArrayList<>();
+
+        public int retryCnt = 1;
+
+
+        public int defaultTimeout =  -1;
+
+        public int timeoutPolicy = 0; // 0 kick out
     }
 
     static class ConnectionPoolSettings {

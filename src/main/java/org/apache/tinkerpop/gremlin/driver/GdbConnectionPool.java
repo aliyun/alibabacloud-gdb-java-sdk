@@ -35,9 +35,6 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-/**
- * @author Stephen Mallette (http://stephen.genoprime.com)
- */
 final class GdbConnectionPool {
     private static final Logger logger = LoggerFactory.getLogger(GdbConnectionPool.class);
 
@@ -88,8 +85,9 @@ final class GdbConnectionPool {
         this.connections = new CopyOnWriteArrayList<>();
 
         try {
-            for (int i = 0; i < minPoolSize; i++)
+            for (int i = 0; i < minPoolSize; i++) {
                 this.connections.add(new GdbConnection(host.getHostUri(), this, settings.maxInProcessPerConnection));
+            }
         } catch (ConnectionException ce) {
             // ok if we don't get it initialized here - when a request is attempted in a connection from the
             // pool it will try to create new connections as needed.
@@ -109,7 +107,9 @@ final class GdbConnectionPool {
     public GdbConnection borrowConnection(final long timeout, final TimeUnit unit) throws TimeoutException, ConnectionException {
         logger.debug("Borrowing connection from pool on {} - timeout in {} {}", host, timeout, unit);
 
-        if (isClosed()) throw new ConnectionException(host.getHostUri(), host.getAddress(), "Pool is shutdown");
+        if (isClosed()) {
+            throw new ConnectionException(host.getHostUri(), host.getAddress(), "Pool is shutdown");
+        }
 
         final GdbConnection leastUsedConn = selectLeastUsed();
 
@@ -128,8 +128,9 @@ final class GdbConnectionPool {
         }
 
         if (null == leastUsedConn) {
-            if (isClosed())
+            if (isClosed()) {
                 throw new ConnectionException(host.getHostUri(), host.getAddress(), "Pool is shutdown");
+            }
             logger.debug("Pool was initialized but a connection could not be selected earlier - waiting for connection on {}", host);
             return waitForConnection(timeout, unit);
         }
@@ -138,9 +139,10 @@ final class GdbConnectionPool {
         // not at maximum then consider opening a connection
         final int currentPoolSize = connections.size();
         if (leastUsedConn.borrowed.get() >= maxSimultaneousUsagePerConnection && currentPoolSize < maxPoolSize) {
-            if (logger.isDebugEnabled())
+            if (logger.isDebugEnabled()) {
                 logger.debug("Least used {} on {} exceeds maxSimultaneousUsagePerConnection but pool size {} < maxPoolSize - consider new connection",
                         leastUsedConn.getConnectionInfo(), host, currentPoolSize);
+            }
             considerNewConnection();
         }
 
@@ -155,8 +157,9 @@ final class GdbConnectionPool {
             }
 
             if (leastUsedConn.borrowed.compareAndSet(borrowed, borrowed + 1)) {
-                if (logger.isDebugEnabled())
+                if (logger.isDebugEnabled()) {
                     logger.debug("Return least used {} on {}", leastUsedConn.getConnectionInfo(), host);
+                }
                 return leastUsedConn;
             }
         }
@@ -164,7 +167,9 @@ final class GdbConnectionPool {
 
     public void returnConnection(final GdbConnection connection) throws ConnectionException {
         logger.debug("Attempting to return {} on {}", connection, host);
-        if (isClosed()) throw new ConnectionException(host.getHostUri(), host.getAddress(), "Pool is shutdown");
+        if (isClosed()) {
+            throw new ConnectionException(host.getHostUri(), host.getAddress(), "Pool is shutdown");
+        }
 
         final int borrowed = connection.borrowed.decrementAndGet();
 
@@ -174,8 +179,9 @@ final class GdbConnectionPool {
         } else {
             if (bin.contains(connection) && borrowed == 0) {
                 logger.debug("{} is already in the bin and it has no inflight requests so it is safe to close", connection);
-                if (bin.remove(connection))
+                if (bin.remove(connection)) {
                     connection.closeAsync();
+                }
                 return;
             }
 
@@ -188,16 +194,19 @@ final class GdbConnectionPool {
             final int poolSize = connections.size();
             final int availableInProcess = connection.availableInProcess();
             if (poolSize > minPoolSize && borrowed <= minSimultaneousUsagePerConnection) {
-                if (logger.isDebugEnabled())
+                if (logger.isDebugEnabled()) {
                     logger.debug("On {} pool size of {} > minPoolSize {} and borrowed of {} <= minSimultaneousUsagePerConnection {} so destroy {}",
                             host, poolSize, minPoolSize, borrowed, minSimultaneousUsagePerConnection, connection.getConnectionInfo());
+                }
                 destroyConnection(connection);
             } else if (availableInProcess < minInProcess && maxPoolSize > 1) {
-                if (logger.isDebugEnabled())
+                if (logger.isDebugEnabled()) {
                     logger.debug("On {} availableInProcess {} < minInProcess {} so replace {}", host, availableInProcess, minInProcess, connection.getConnectionInfo());
+                }
                 replaceConnection(connection);
-            } else
+            } else {
                 announceAvailableConnection();
+            }
         }
     }
 
@@ -217,7 +226,9 @@ final class GdbConnectionPool {
      * Permanently kills the pool.
      */
     public synchronized CompletableFuture<Void> closeAsync() {
-        if (closeFuture.get() != null) return closeFuture.get();
+        if (closeFuture.get() != null) {
+            return closeFuture.get();
+        }
 
         logger.info("Signalled closing of connection pool on {} with core size of {}", host, minPoolSize);
 
@@ -260,10 +271,12 @@ final class GdbConnectionPool {
             logger.debug("There are {} connections scheduled for creation on {}", inCreation, host);
 
             // don't create more than one at a time
-            if (inCreation >= 1)
+            if (inCreation >= 1) {
                 return;
-            if (scheduledForCreation.compareAndSet(inCreation, inCreation + 1))
+            }
+            if (scheduledForCreation.compareAndSet(inCreation, inCreation + 1)) {
                 break;
+            }
         }
 
         newConnection();
@@ -280,11 +293,13 @@ final class GdbConnectionPool {
     private boolean addConnectionIfUnderMaximum() {
         while (true) {
             int opened = open.get();
-            if (opened >= maxPoolSize)
+            if (opened >= maxPoolSize) {
                 return false;
+            }
 
-            if (open.compareAndSet(opened, opened + 1))
+            if (open.compareAndSet(opened, opened + 1)) {
                 break;
+            }
         }
 
         if (isClosed()) {
@@ -308,11 +323,13 @@ final class GdbConnectionPool {
     private boolean destroyConnection(final GdbConnection connection) {
         while (true) {
             int opened = open.get();
-            if (opened <= minPoolSize)
+            if (opened <= minPoolSize) {
                 return false;
+            }
 
-            if (open.compareAndSet(opened, opened - 1))
+            if (open.compareAndSet(opened, opened - 1)) {
                 break;
+            }
         }
 
         definitelyDestroyConnection(connection);
@@ -348,8 +365,9 @@ final class GdbConnectionPool {
                 to = 0;
             }
 
-            if (isClosed())
+            if (isClosed()) {
                 throw new ConnectionException(host.getHostUri(), host.getAddress(), "Pool is shutdown");
+            }
 
             final GdbConnection leastUsed = selectLeastUsed();
             if (leastUsed != null) {
@@ -363,8 +381,9 @@ final class GdbConnectionPool {
                     }
 
                     if (leastUsed.borrowed.compareAndSet(inFlight, inFlight + 1)) {
-                        if (logger.isDebugEnabled())
+                        if (logger.isDebugEnabled()) {
                             logger.debug("Return least used {} on {} after waiting", leastUsed.getConnectionInfo(), host);
+                        }
                         return leastUsed;
                     }
                 }
@@ -399,7 +418,7 @@ final class GdbConnectionPool {
      * as part of a schedule in {@link GdbHost} to periodically try to create working connections.
      */
     private boolean tryReconnect(final GdbHost h) {
-        logger.debug("Trying to re-establish connection on {}", host);
+        logger.warn("Trying to re-establish connection on {}", host);
 
         GdbConnection connection = null;
         try {
@@ -414,7 +433,9 @@ final class GdbConnectionPool {
             return true;
         } catch (Exception ex) {
             logger.debug("Failed reconnect attempt on {}", host);
-            if (connection != null) definitelyDestroyConnection(connection);
+            if (connection != null) {
+                definitelyDestroyConnection(connection);
+            }
             return false;
         }
     }
@@ -422,8 +443,9 @@ final class GdbConnectionPool {
     private void announceAvailableConnection() {
         logger.debug("Announce connection available on {}", host);
 
-        if (waiter == 0)
+        if (waiter == 0) {
             return;
+        }
 
         waitLock.lock();
         try {
@@ -460,8 +482,9 @@ final class GdbConnectionPool {
     }
 
     private void announceAllAvailableConnection() {
-        if (waiter == 0)
+        if (waiter == 0) {
             return;
+        }
 
         waitLock.lock();
         try {

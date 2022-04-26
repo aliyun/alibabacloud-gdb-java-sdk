@@ -1,11 +1,22 @@
 /*
- * (C)  2019-present Alibaba Group Holding Limited.
+ * Licensed to the Apache Software Foundation (ASF) under one
+ * or more contributor license agreements.  See the NOTICE file
+ * distributed with this work for additional information
+ * regarding copyright ownership.  The ASF licenses this file
+ * to you under the Apache License, Version 2.0 (the
+ * "License"); you may not use this file except in compliance
+ * with the License.  You may obtain a copy of the License at
  *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing,
+ * software distributed under the License is distributed on an
+ * "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY
+ * KIND, either express or implied.  See the License for the
+ * specific language governing permissions and limitations
+ * under the License.
  */
-package com.alibaba.gdb.java.client;
+package test.client;
 
 
 import org.apache.commons.lang3.concurrent.BasicThreadFactory;
@@ -15,9 +26,8 @@ import org.apache.tinkerpop.gremlin.driver.GdbResultSet;
 import org.apache.tinkerpop.gremlin.driver.RequestOptions;
 import org.apache.tinkerpop.gremlin.driver.Result;
 import org.apache.tinkerpop.gremlin.driver.remote.GdbDriverRemoteConnection;
+import org.apache.tinkerpop.gremlin.driver.util.BatchTransactionWork;
 import org.apache.tinkerpop.gremlin.process.traversal.AnonymousTraversalSource;
-import org.apache.tinkerpop.gremlin.process.traversal.P;
-import org.apache.tinkerpop.gremlin.process.traversal.TextP;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversal;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.GraphTraversalSource;
 import org.apache.tinkerpop.gremlin.process.traversal.dsl.graph.__;
@@ -28,6 +38,7 @@ import org.apache.tinkerpop.gremlin.structure.util.reference.ReferenceVertex;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -41,10 +52,16 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.function.Consumer;
 
-public class Demo implements  AutoCloseable {
+public class InteractionMethodTest implements  AutoCloseable {
     private ThreadLocal<GdbClient> client = ThreadLocal.withInitial(() -> null);
     GdbCluster cluster = null;
+
+    public static void show(Consumer<Object> consumer, Object... objects) {
+        Arrays.stream(objects).forEach(obj -> consumer.accept(obj));
+    }
+
     /**
      * GdbClient init
      * @param yaml server yaml config
@@ -55,20 +72,13 @@ public class Demo implements  AutoCloseable {
      *                  given a {@link org.apache.tinkerpop.gremlin.driver.LoadBalancingStrategy}.  Transactions are automatically committed
      *                  (or rolled-back on error) after each request.
      */
-    private Demo(String yaml, boolean session) {
+    private InteractionMethodTest(String yaml, boolean session) {
         try {
             String sessionId = UUID.randomUUID().toString();
 
             /// Case 1: based on server yaml
             cluster = GdbCluster.build(new File(yaml)).create();
 
-            /// Case 2: of course you can  do some special init
-            //  Cluster.Builder builder = Cluster.build()
-            //      .addContactPoint("127.0.0.1")
-            //      .port(8182)
-            //      .credentials("userName","userPassword")
-            //      .serializer(new GraphBinaryMessageSerializerV1());
-            //  Cluster cluster = builder.create();
             GdbClient c = session ? cluster.connect(sessionId) : cluster.connect();
             c.init();
             client.set(c);
@@ -122,6 +132,69 @@ public class Demo implements  AutoCloseable {
 
     static class TestCase {
         private static final int DEFAULT_TIMEOUT_MILLSECOND = 30000;
+
+        /**
+         * simple script request test, for period second
+         * @param yaml gdb server configuration
+         * @param  dsl user script dsl
+         * @param period test period seconds
+         */
+        public void simpleRequest(String yaml, String dsl, long period) {
+            boolean session = false;
+            InteractionMethodTest demo = new InteractionMethodTest(yaml, session);
+            GdbClient gdbClient = demo.client.get();
+            try {
+                long start =  System.currentTimeMillis();
+                for (long end = start; end - start <= 1000 * period; end = System.currentTimeMillis()) {
+                    gdbClient.submit(dsl).forEach(result -> {
+                        show(System.out::print, "TimeMs: ", System.currentTimeMillis(), ", DefaultResult: ", result, "\n");
+                    });
+                    show(System.out::print, "TimeMs: ", System.currentTimeMillis(), ", -----------------end line-------------- ", "\n");
+                }
+
+                Thread.sleep(100);
+            } catch (Exception e) {
+                e.printStackTrace();
+            } finally {
+                // close Clustered GdbClient
+                demo.close();
+            }
+        }
+
+        public <T extends GdbClient, U extends GraphTraversalSource> void simpleSessionRequest(String yaml, BatchTransactionWork<T, U> work) {
+            boolean session = true;
+            InteractionMethodTest demo = new InteractionMethodTest(yaml, session);
+            try {
+                GraphTraversalSource g = AnonymousTraversalSource.traversal().withRemote(GdbDriverRemoteConnection.using(demo.client.get()));
+
+                work.execute((T)demo.client.get(), (U)g);
+            } catch (Exception e) {
+                throw  new RuntimeException("exception - ",e);
+            } catch (Throwable throwable) {
+                throwable.printStackTrace();
+            } finally {
+                // close Clustered GdbClient
+                demo.close();
+            }
+        }
+
+        public <T extends GdbClient, U extends GraphTraversalSource> void simpleByteCodeRequest(String yaml, BatchTransactionWork<T, U> work) {
+            // init Clustered GdbClient
+            boolean session = false;
+            InteractionMethodTest demo = new InteractionMethodTest(yaml, session);
+            try {
+                GraphTraversalSource g = AnonymousTraversalSource.traversal().withRemote(GdbDriverRemoteConnection.using(demo.client.get()));
+
+                work.execute((T)demo.client.get(), (U)g);
+            } catch (Exception e) {
+                throw  new RuntimeException("exception - ",e);
+            } catch (Throwable throwable) {
+                throwable.printStackTrace();
+            } finally {
+                // close Clustered GdbClient
+                demo.close();
+            }
+        }
         /**
          * String-based Gremlin scripts, every request is completely encapsulated within a single transaction
          * @param yaml gdb server configuration
@@ -130,14 +203,14 @@ public class Demo implements  AutoCloseable {
          * @param vertexStart test start vertex
          * @param vertexEnd test end vertex
          */
-        public static void scriptSessionLessTest(String yaml,String vertexLabel,String edgeLabel, String vertexStart,String vertexEnd) {
+        public void scriptSessionLessTest(String yaml, String vertexLabel, String edgeLabel, String vertexStart,String vertexEnd) {
             // init Clustered GdbClient
             boolean session = false;
-            Demo demo = new Demo(yaml, session);
+            InteractionMethodTest demo = new InteractionMethodTest(yaml, session);
             GdbClient gdbClient = demo.client.get();
             try {
                 // init parameters
-                Map<String, Object> parameters = new HashMap();
+                Map<String, Object> parameters = new HashMap<>();
                 parameters.put("vertexStart", vertexStart);
                 parameters.put("vertexEnd", vertexEnd);
                 parameters.put("vertexLabel", vertexLabel);
@@ -154,7 +227,7 @@ public class Demo implements  AutoCloseable {
 
                     // if you do not care about result
                     dsl = "g.addV(vertexLabel).property(T.id, vertexEnd)";
-                    gdbClient.submitAsync(dsl, parameters).get().all().get(DEFAULT_TIMEOUT_MILLSECOND,TimeUnit.MILLISECONDS);
+                    gdbClient.submitAsync(dsl, parameters).get().all().get(DEFAULT_TIMEOUT_MILLSECOND, TimeUnit.MILLISECONDS);
 
                     // if you do not care about result
                     dsl = "g.addE(edgeLabel).from(V(vertexStart)).to(V(vertexEnd))";
@@ -195,15 +268,15 @@ public class Demo implements  AutoCloseable {
          * @param vertexStart test start vertex
          * @param vertexEnd test end vertex
          */
-        public static void scriptSessionTest(String yaml,String vertexLabel,String edgeLabel, String vertexStart,String vertexEnd) {
+        public void scriptSessionTest(String yaml, String vertexLabel, String edgeLabel, String vertexStart,String vertexEnd) {
             // init Session GdbClient
             boolean session = true;
 
-            Demo demo = new Demo(yaml, session);
+            InteractionMethodTest demo = new InteractionMethodTest(yaml, session);
             GdbClient txClient = demo.client.get();
             try {
                 // init parameters
-                Map<String, Object> parameters = new HashMap();
+                Map<String, Object> parameters = new HashMap<>();
                 parameters.put("vertexStart", vertexStart);
                 parameters.put("vertexEnd", vertexEnd);
                 parameters.put("vertexLabel", vertexLabel);
@@ -263,10 +336,10 @@ public class Demo implements  AutoCloseable {
          * @param vertexStart test start vertex
          * @param vertexEnd test end vertex
          */
-        public static void bytecodeSessionLessTest(String yaml, String vertexLabel, String edgeLabel, String vertexStart, String vertexEnd) {
+        public void bytecodeSessionLessTest(String yaml, String vertexLabel, String edgeLabel, String vertexStart, String vertexEnd) {
             // init Clustered GdbClient
             boolean session = false;
-            Demo demo = new Demo(yaml, session);
+            InteractionMethodTest demo = new InteractionMethodTest(yaml, session);
             try {
                 GraphTraversalSource g = AnonymousTraversalSource.traversal().withRemote(GdbDriverRemoteConnection.using(demo.client.get()));
 
@@ -297,10 +370,10 @@ public class Demo implements  AutoCloseable {
          * @param vertexStart test start vertex
          * @param vertexEnd test end vertex
          */
-        public static void bytecodeSessionTest(String yaml, String vertexLabel, String edgeLabel, String vertexStart, String vertexEnd) {
+        public void bytecodeSessionTest(String yaml, String vertexLabel, String edgeLabel, String vertexStart, String vertexEnd) {
             // init Session GdbClient
             boolean session = true;
-            Demo demo = new Demo(yaml, session);
+            InteractionMethodTest demo = new InteractionMethodTest(yaml, session);
             GdbClient txClient = demo.client.get();
             try {
                 txClient.batchTransaction((tx, g) -> {
@@ -362,8 +435,8 @@ public class Demo implements  AutoCloseable {
          * @param vertexEnd test end vertex
          * @param threadCount thread count
          */
-        public static void multiThreadBatchTest(String yaml, String vertexLabel, String edgeLabel, String vertexStart, String vertexEnd, int threadCount) {
-            Demo demo = new Demo(yaml, false);
+        public void multiThreadBatchTest(String yaml, String vertexLabel, String edgeLabel, String vertexStart, String vertexEnd, int threadCount) {
+            InteractionMethodTest demo = new InteractionMethodTest(yaml, false);
             GdbClient txClient = demo.client.get();
             txClient.exec("g.V().drop()", new HashMap<>(), DEFAULT_TIMEOUT_MILLSECOND);
 
@@ -375,7 +448,7 @@ public class Demo implements  AutoCloseable {
             for(int i = 0; i < threadCount; i++) {
                 singleThreadPool.submit(() -> {
                     try {
-                        Demo.TestCase.bytecodeSessionTest(yaml, vertexLabel, edgeLabel, vertexStart + "-" + Thread.currentThread().getName(),
+                        bytecodeSessionTest(yaml, vertexLabel, edgeLabel, vertexStart + "-" + Thread.currentThread().getName(),
                             vertexEnd + "-" + Thread.currentThread().getName());
                         barrier.await();
                     } catch (InterruptedException e) {
@@ -409,31 +482,32 @@ public class Demo implements  AutoCloseable {
         String edgeLabel = "knows";
         String vertexStart = "gdb-start-vertex";
         String vertexEnd = "gdb-end-vertex";
+        InteractionMethodTest.TestCase testCase = new InteractionMethodTest.TestCase();
         try {
             /**
              * Case 1: script sessionless
              */
-            Demo.TestCase.scriptSessionLessTest(yaml, vertexLabel, edgeLabel, vertexStart, vertexEnd);
+            testCase.scriptSessionLessTest(yaml, vertexLabel, edgeLabel, vertexStart, vertexEnd);
 
             /**
              * Case 2: script in-session
              */
-            Demo.TestCase.scriptSessionTest(yaml, vertexLabel, edgeLabel, vertexStart, vertexEnd);
+            testCase.scriptSessionTest(yaml, vertexLabel, edgeLabel, vertexStart, vertexEnd);
 
             /**
              * Case 3: bytecode sessionless
              */
-            Demo.TestCase.bytecodeSessionLessTest(yaml, vertexLabel, edgeLabel, vertexStart, vertexEnd);
+            testCase.bytecodeSessionLessTest(yaml, vertexLabel, edgeLabel, vertexStart, vertexEnd);
 
             /**
              * Case 4: bytecode in-session
              */
-            Demo.TestCase.bytecodeSessionTest(yaml, vertexLabel, edgeLabel, vertexStart, vertexEnd);
+            testCase.bytecodeSessionTest(yaml, vertexLabel, edgeLabel, vertexStart, vertexEnd);
 
             /**
              * Case 5: multiThread thread
              */
-            Demo.TestCase.multiThreadBatchTest(yaml, vertexLabel, edgeLabel, vertexStart, vertexEnd, 10);
+            testCase.multiThreadBatchTest(yaml, vertexLabel, edgeLabel, vertexStart, vertexEnd, 10);
 
             System.exit(0);
         } catch (Throwable e) {

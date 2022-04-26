@@ -18,11 +18,11 @@
  */
 package org.apache.tinkerpop.gremlin.driver;
 
+import org.apache.tinkerpop.gremlin.driver.exception.ConnectionException;
+import org.apache.tinkerpop.gremlin.driver.message.RequestMessage;
 import org.apache.tinkerpop.gremlin.driver.remote.GdbDriverRemoteConnection;
 import org.apache.tinkerpop.gremlin.driver.util.BatchTransactionWork;
 import org.apache.tinkerpop.gremlin.groovy.GdbGroovyTranslator;
-import org.apache.tinkerpop.gremlin.driver.exception.ConnectionException;
-import org.apache.tinkerpop.gremlin.driver.message.RequestMessage;
 import org.apache.tinkerpop.gremlin.process.traversal.AnonymousTraversalSource;
 import org.apache.tinkerpop.gremlin.process.traversal.Bytecode;
 import org.apache.tinkerpop.gremlin.process.traversal.Traversal;
@@ -34,10 +34,23 @@ import org.apache.tinkerpop.gremlin.util.iterator.IteratorUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.*;
-import java.util.concurrent.*;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * A {@code GdbClient} is constructed from a {@link GdbCluster} and represents a way to send messages to Gremlin Server.
@@ -45,20 +58,24 @@ import java.util.stream.Collectors;
  * functionality.  See the implementations for specifics on their individual usage.
  * <p/>
  * The {@code GdbClient} is designed to be re-used and shared across threads.
- *
- * @author Stephen Mallette (http://stephen.genoprime.com)
  */
 public abstract class GdbClient {
-
+    public static final int DEFAULT_SCRIPT_EVAL_TIMEOUT = 30000;
     private static final Logger logger = LoggerFactory.getLogger(GdbClient.class);
-
+    // private static final Collection<String> WRITABLE_TEMPLATE = Arrays.asList("addV(", "addE(", "drop(", "property(");
     protected final GdbCluster cluster;
-    protected volatile boolean initialized;
     protected final GdbClient.Settings settings;
+    protected final int retryCnt;
+    protected volatile boolean initialized;
+    private final boolean kickTimeoutReadonlyHost;
+    private final int defaultReadonlyTimeout;
 
     GdbClient(final GdbCluster cluster, final GdbClient.Settings settings) {
         this.cluster = cluster;
         this.settings = settings;
+        this.retryCnt = cluster.getRetryCnt();
+        this.kickTimeoutReadonlyHost = cluster.getKickTimeoutReadonlyHost();
+        this.defaultReadonlyTimeout = cluster.getDefaultReadonlyTimeout();
     }
 
     /**
@@ -78,7 +95,7 @@ public abstract class GdbClient {
     /**
      * Chooses a {@link GdbConnection} to write the message to.
      */
-    protected abstract GdbConnection chooseConnection(final RequestMessage msg) throws TimeoutException, ConnectionException;
+    protected abstract GdbConnection chooseConnection(final RequestMessage msg, boolean isReqRead, Collection<GdbHost> deadHosts) throws TimeoutException, ConnectionException;
 
     /**
      * Asynchronous close of the {@code GdbClient}.
@@ -88,6 +105,7 @@ public abstract class GdbClient {
 
     /**
      * submit a serial query in one transaction
+     *
      * @param work
      */
     public <T extends GdbClient, U extends GraphTraversalSource> void batchTransaction(BatchTransactionWork<T, U> work) throws RuntimeException {
@@ -109,7 +127,7 @@ public abstract class GdbClient {
      * one or more globally defined {@link Graph} or {@link TraversalSource} server bindings for the context of
      * the created {@code GdbClient}.
      */
-    public GdbClient alias(final Map<String,String> aliases) {
+    public GdbClient alias(final Map<String, String> aliases) {
         return new AliasClusteredClient(this, aliases, settings);
     }
 
@@ -134,9 +152,9 @@ public abstract class GdbClient {
      * instances and are therefore bulked, meaning that to properly iterate the contents of the result each
      * {@link Traverser#bulk()} must be examined to determine the number of times that object should be presented in
      * iteration.
-     * @param traversal user traversal
-     * @param executeTime max wait time
      *
+     * @param traversal   user traversal
+     * @param executeTime max wait time
      * @return request's results, empty if no result
      */
     public List<Result> exec(final Traversal traversal, int executeTime) {
@@ -145,7 +163,7 @@ public abstract class GdbClient {
             long left = executeTime;
             List<Result> results = new ArrayList<>();
             RequestOptions.Builder options = RequestOptions.build().timeout(executeTime);
-            GdbResultSet resultSet= submitAsync(traversal,options).get(executeTime,TimeUnit.MILLISECONDS);
+            GdbResultSet resultSet = submitAsync(traversal, options).get(executeTime, TimeUnit.MILLISECONDS);
             left -= (System.currentTimeMillis() - start);
             while (true) {
                 start = System.currentTimeMillis();
@@ -154,7 +172,7 @@ public abstract class GdbClient {
                 if (list.size() <= 0) {
                     break;
                 } else if (left <= 0) {
-                    throw  new RuntimeException("timeout - " + String.valueOf(executeTime));
+                    throw new RuntimeException("timeout - " + String.valueOf(executeTime));
                 } else {
                     results.addAll(list);
                 }
@@ -205,8 +223,7 @@ public abstract class GdbClient {
      * A version of {@link #submit(Bytecode)} which provides the ability to set per-request options.
      *
      * @param bytecode request in the form of gremlin {@link Bytecode}
-     * @param options for the request
-     *
+     * @param options  for the request
      * @see #submit(Bytecode)
      */
     public GdbResultSet submit(final Bytecode bytecode, final RequestOptions options) {
@@ -232,8 +249,7 @@ public abstract class GdbClient {
      * A version of {@link #submit(Bytecode)} which provides the ability to set per-request options.
      *
      * @param bytecode request in the form of gremlin {@link Bytecode}
-     * @param options for the request
-     *
+     * @param options  for the request
      * @see #submitAsync(Bytecode)
      */
     public CompletableFuture<GdbResultSet> submitAsync(final Bytecode bytecode, final RequestOptions options) {
@@ -246,8 +262,9 @@ public abstract class GdbClient {
      * automatically if it is not called directly and multiple calls will not have effect.
      */
     public synchronized GdbClient init() {
-        if (initialized)
+        if (initialized) {
             return this;
+        }
 
         logger.debug("Initializing gdbClient on cluster [{}]", cluster);
 
@@ -274,7 +291,7 @@ public abstract class GdbClient {
      * this method to concatenating a Gremlin script from dynamically produced strings and sending it to
      * {@link #submit(String)}.  Parameterized scripts will perform better.
      *
-     * @param gremlin the gremlin script to execute
+     * @param gremlin    the gremlin script to execute
      * @param parameters a map of parameters that will be bound to the script on execution
      */
     public GdbResultSet submit(final String gremlin, final Map<String, Object> parameters) {
@@ -291,10 +308,9 @@ public abstract class GdbClient {
      * this method to concatenating a Gremlin script from dynamically produced strings and sending it to
      * {@link #submit(String)}.  Parameterized scripts will perform better.
      *
-     * @param gremlin the gremlin script to execute
-     * @param parameters a map of parameters that will be bound to the script on execution
+     * @param gremlin     the gremlin script to execute
+     * @param parameters  a map of parameters that will be bound to the script on execution
      * @param executeTime max wait time
-     *
      * @return request's results, empty if no result
      */
     public List<Result> exec(final String gremlin, final Map<String, Object> parameters, int executeTime) {
@@ -303,7 +319,7 @@ public abstract class GdbClient {
             long left = executeTime;
             List<Result> results = new ArrayList<>();
             RequestOptions.Builder options = RequestOptions.build().timeout(executeTime);
-            GdbResultSet resultSet = submitAsync(gremlin,parameters).get(executeTime,TimeUnit.MILLISECONDS);
+            GdbResultSet resultSet = submitAsync(gremlin, parameters).get(executeTime, TimeUnit.MILLISECONDS);
             left -= (System.currentTimeMillis() - start);
             while (true) {
                 start = System.currentTimeMillis();
@@ -312,7 +328,7 @@ public abstract class GdbClient {
                 if (list.size() <= 0) {
                     break;
                 } else if (left <= 0) {
-                    throw  new RuntimeException("timeout - " + String.valueOf(executeTime));
+                    throw new RuntimeException("timeout - " + String.valueOf(executeTime));
                 } else {
                     results.addAll(list);
                 }
@@ -324,6 +340,7 @@ public abstract class GdbClient {
             throw new RuntimeException(ex);
         }
     }
+
     /**
      * Submits a Gremlin script to the server and returns a {@link ResultSet} once the write of the request is
      * complete.
@@ -353,7 +370,7 @@ public abstract class GdbClient {
      * The asynchronous version of {@link #submit(String, Map)}} where the returned future will complete when the
      * write of the request completes.
      *
-     * @param gremlin the gremlin script to execute
+     * @param gremlin    the gremlin script to execute
      * @param parameters a map of parameters that will be bound to the script on execution
      */
     public CompletableFuture<GdbResultSet> submitAsync(final String gremlin, final Map<String, Object> parameters) {
@@ -369,15 +386,15 @@ public abstract class GdbClient {
      * The asynchronous version of {@link #submit(String, Map)}} where the returned future will complete when the
      * write of the request completes.
      *
-     * @param gremlin the gremlin script to execute
-     * @param parameters a map of parameters that will be bound to the script on execution
+     * @param gremlin                the gremlin script to execute
+     * @param parameters             a map of parameters that will be bound to the script on execution
      * @param graphOrTraversalSource rebinds the specified global Gremlin Server variable to "g"
      * @deprecated As of release 3.4.0, replaced by {@link #submitAsync(String, RequestOptions)}.
      */
     @Deprecated
     public CompletableFuture<GdbResultSet> submitAsync(final String gremlin, final String graphOrTraversalSource,
                                                        final Map<String, Object> parameters) {
-        Map<String,String> aliases = null;
+        Map<String, String> aliases = null;
         if (graphOrTraversalSource != null && !graphOrTraversalSource.isEmpty()) {
             aliases = makeDefaultAliasMap(graphOrTraversalSource);
         }
@@ -389,15 +406,15 @@ public abstract class GdbClient {
      * The asynchronous version of {@link #submit(String, Map)}} where the returned future will complete when the
      * write of the request completes.
      *
-     * @param gremlin the gremlin script to execute
+     * @param gremlin    the gremlin script to execute
      * @param parameters a map of parameters that will be bound to the script on execution
-     * @param aliases aliases the specified global Gremlin Server variable some other name that then be used in the
-     *                script where the key is the alias name and the value represents the global variable on the
-     *                server
+     * @param aliases    aliases the specified global Gremlin Server variable some other name that then be used in the
+     *                   script where the key is the alias name and the value represents the global variable on the
+     *                   server
      * @deprecated As of release 3.4.0, replaced by {@link #submitAsync(String, RequestOptions)}.
      */
     @Deprecated
-    public CompletableFuture<GdbResultSet> submitAsync(final String gremlin, final Map<String,String> aliases,
+    public CompletableFuture<GdbResultSet> submitAsync(final String gremlin, final Map<String, String> aliases,
                                                        final Map<String, Object> parameters) {
         final RequestOptions.Builder options = RequestOptions.build();
         if (aliases != null && !aliases.isEmpty()) {
@@ -438,33 +455,99 @@ public abstract class GdbClient {
         return submitAsync(request.create());
     }
 
+    private boolean isRequestReadOnly(Object gremlin) {
+        String strGremlin = (gremlin instanceof Bytecode) ? ((Bytecode) gremlin).toString() : (String) gremlin;
+        for (int i = 0; i < strGremlin.length(); i++) {
+            if (strGremlin.charAt(i) == 'a') {
+                if (strGremlin.substring(i).startsWith("addV(") || strGremlin.substring(i).startsWith("addE(")) {
+                    return false;
+                }
+            } else if (strGremlin.charAt(i) == 'd') {
+                if (strGremlin.substring(i).startsWith("drop(")) {
+                    return false;
+                }
+            } else if (strGremlin.charAt(i) == 'p') {
+                if (strGremlin.substring(i).startsWith("property(")) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    private int RefreshAndGetTimeout(final RequestMessage msg, GdbConnection connection) {
+        assert(connection.isReadOnly());
+
+        int timeout = defaultReadonlyTimeout;
+        if (timeout <= 0) {
+            timeout = (int) msg.getArgs().getOrDefault(Tokens.ARGS_SCRIPT_EVAL_TIMEOUT, DEFAULT_SCRIPT_EVAL_TIMEOUT);
+        }
+        msg.getArgs().put(Tokens.ARGS_SCRIPT_EVAL_TIMEOUT, timeout);
+
+        return timeout;
+    }
+
     /**
      * A low-level method that allows the submission of a manually constructed {@link RequestMessage}.
+     * may be gremlin / bytecode
+     * may be retry at most retryCnt numbers
      */
     public CompletableFuture<GdbResultSet> submitAsync(final RequestMessage msg) {
-        if (isClosing()) throw new IllegalStateException("GdbClient has been closed");
+        if (isClosing()) {
+            throw new IllegalStateException("GdbClient has been closed");
+        }
 
-        if (!initialized)
+        if (!initialized) {
             init();
+        }
 
-        final CompletableFuture<GdbResultSet> future = new CompletableFuture<>();
+        int curr_retry_cnt = 0;
         GdbConnection connection = null;
-        try {
-            // the connection is returned to the pool once the response has been completed...see GdbConnection.write()
-            // the connection may be returned to the pool with the host being marked as "unavailable"
-            connection = chooseConnection(msg);
-            connection.write(msg, future);
-            return future;
-        } catch (TimeoutException toe) {
-            // there was a timeout borrowing a connection
-            throw new RuntimeException(toe);
-        } catch (ConnectionException ce) {
-            throw new RuntimeException(ce);
-        } catch (Exception ex) {
-            throw new RuntimeException(ex);
-        } finally {
-            if (logger.isDebugEnabled()) {
-                logger.debug("Submitted {} to - {}", msg, null == connection ? "connection not initialized" : connection.toString());
+        Collection<GdbHost> deadHosts = new ArrayList<>();
+
+        boolean isReqRead = isRequestReadOnly(msg.getArgs().get(Tokens.ARGS_GREMLIN));
+        while (true) {
+            try {
+                // the connection is returned to the pool once the response has been completed...see GdbConnection.write()
+                // the connection may be returned to the pool with the host being marked as "unavailable"
+                connection = chooseConnection(msg, isReqRead, deadHosts);
+
+                final CompletableFuture<GdbResultSet> future = new CompletableFuture<>();
+                if (cluster.clusterReadMode() && connection.isReadOnly()) {
+                    int timeout = RefreshAndGetTimeout(msg, connection);
+                    connection.write(msg, future);
+                    List<Result> results = future.get().all().get(timeout, TimeUnit.MILLISECONDS);
+                    final CompletableFuture<GdbResultSet> future2 = new CompletableFuture<>();
+                    future2.complete(new GdbPackResultSet(null, cluster.executor(), null, msg, connection.getHost(), results));
+                    return future2;
+                } else {
+                    connection.write(msg, future);
+                    return future;
+                }
+            } catch (Throwable toe) {
+                if (connection != null) {
+                    if (connection.isReadOnly()) {
+                        if (toe instanceof TimeoutException && kickTimeoutReadonlyHost) {
+                            connection.getPool().considerHostUnavailable();
+                            System.out.println("kicking out " + connection);
+                        }
+
+                        // master as the last server, should not kick off
+                        deadHosts.add(connection.getHost());
+                    }
+                }
+                System.out.println("Submitted " + msg + " to " + (null == connection ? "connection not initialized" : connection.toString()) + " exception - " + toe.getMessage() + ", retrying...");
+                // there was a timeout borrowing a connection
+                if (cluster.clusterReadMode() && (++curr_retry_cnt) <= retryCnt) {
+                    logger.warn("Submitted {} to - {}, exception - {}, retrying...", msg, null == connection ? "connection not initialized" : connection.toString(), toe.getMessage());
+                    continue;
+                }
+
+                throw new RuntimeException(toe);
+            } finally {
+                if (logger.isDebugEnabled()) {
+                    logger.debug("Submitted {} to - {}", msg, null == connection ? "connection not initialized" : connection.toString());
+                }
             }
         }
     }
@@ -492,8 +575,8 @@ public abstract class GdbClient {
         return cluster;
     }
 
-    protected Map<String,String> makeDefaultAliasMap(final String graphOrTraversalSource) {
-        final Map<String,String> aliases = new HashMap<>();
+    protected Map<String, String> makeDefaultAliasMap(final String graphOrTraversalSource) {
+        final Map<String, String> aliases = new HashMap<>();
         aliases.put("g", graphOrTraversalSource);
         return aliases;
     }
@@ -505,8 +588,8 @@ public abstract class GdbClient {
      */
     public final static class ClusteredClient extends GdbClient {
 
-        protected ConcurrentMap<GdbHost, GdbConnectionPool> hostConnectionPools = new ConcurrentHashMap<>();
         private final AtomicReference<CompletableFuture<Void>> closing = new AtomicReference<>(null);
+        protected ConcurrentMap<GdbHost, GdbConnectionPool> hostConnectionPools = new ConcurrentHashMap<>();
 
         ClusteredClient(final GdbCluster cluster, final GdbClient.Settings settings) {
             super(cluster, settings);
@@ -533,8 +616,8 @@ public abstract class GdbClient {
          * this method to concatenating a Gremlin script from dynamically produced strings and sending it to
          * {@link #submit(String)}.  Parameterized scripts will perform better.
          *
-         * @param gremlin the gremlin script to execute
-         * @param parameters a map of parameters that will be bound to the script on execution
+         * @param gremlin                the gremlin script to execute
+         * @param parameters             a map of parameters that will be bound to the script on execution
          * @param graphOrTraversalSource rebinds the specified global Gremlin Server variable to "g"
          */
         public GdbResultSet submit(final String gremlin, final String graphOrTraversalSource, final Map<String, Object> parameters) {
@@ -550,7 +633,7 @@ public abstract class GdbClient {
          */
         @Override
         public GdbClient alias(final String graphOrTraversalSource) {
-            final Map<String,String> aliases = new HashMap<>();
+            final Map<String, String> aliases = new HashMap<>();
             aliases.put("g", graphOrTraversalSource);
             return alias(aliases);
         }
@@ -559,7 +642,7 @@ public abstract class GdbClient {
          * {@inheritDoc}
          */
         @Override
-        public GdbClient alias(final Map<String,String> aliases) {
+        public GdbClient alias(final Map<String, String> aliases) {
             return new AliasClusteredClient(this, aliases, settings);
         }
 
@@ -568,7 +651,7 @@ public abstract class GdbClient {
          * from that host's connection pool.
          */
         @Override
-        protected GdbConnection chooseConnection(final RequestMessage msg) throws TimeoutException, ConnectionException {
+        protected GdbConnection chooseConnection(final RequestMessage msg, boolean isReqRead, Collection<GdbHost> deadHosts) throws TimeoutException, ConnectionException {
             final Iterator<GdbHost> possibleHosts;
             if (msg.optionalArgs(Tokens.ARGS_HOST).isPresent()) {
                 // TODO: not sure what should be done if unavailable - select new host and re-submit traversal?
@@ -576,13 +659,14 @@ public abstract class GdbClient {
                 msg.getArgs().remove(Tokens.ARGS_HOST);
                 possibleHosts = IteratorUtils.of(host);
             } else {
-                possibleHosts = this.cluster.loadBalancingStrategy().select(msg);
+                possibleHosts = this.cluster.loadBalancingStrategy().select(msg, isReqRead, deadHosts);
             }
 
             // you can get no possible hosts in more than a few situations. perhaps the servers are just all down.
             // or perhaps the gdbClient is not configured properly (disables ssl when ssl is enabled on the server).
-            if (!possibleHosts.hasNext())
+            if (!possibleHosts.hasNext()) {
                 throw new TimeoutException("Timed out while waiting for an available host - check the gdbClient configuration and connectivity to the server if this message persists");
+            }
 
             final GdbHost bestHost = possibleHosts.next();
             final GdbConnectionPool pool = hostConnectionPools.get(bestHost);
@@ -594,7 +678,7 @@ public abstract class GdbClient {
          */
         @Override
         protected void initializeImplementation() {
-            cluster.allHosts().forEach(host -> {
+            Stream.of(cluster.allMasterHosts(), cluster.allReadonlyHosts()).flatMap(Collection::stream).forEach(host -> {
                 try {
                     // hosts that don't initialize connection pools will come up as a dead host
                     hostConnectionPools.put(host, new GdbConnectionPool(host, this));
@@ -613,8 +697,9 @@ public abstract class GdbClient {
          */
         @Override
         public synchronized CompletableFuture<Void> closeAsync() {
-            if (closing.get() != null)
+            if (closing.get() != null) {
                 return closing.get();
+            }
 
             final CompletableFuture[] poolCloseFutures = new CompletableFuture[hostConnectionPools.size()];
             hostConnectionPools.values().stream().map(GdbConnectionPool::closeAsync).collect(Collectors.toList()).toArray(poolCloseFutures);
@@ -628,11 +713,11 @@ public abstract class GdbClient {
      * specified {@link Graph} or {@link TraversalSource} instances on the server-side.
      */
     public static class AliasClusteredClient extends GdbClient {
-        private final GdbClient gdbClient;
-        private final Map<String,String> aliases = new HashMap<>();
         final CompletableFuture<Void> close = new CompletableFuture<>();
+        private final GdbClient gdbClient;
+        private final Map<String, String> aliases = new HashMap<>();
 
-        AliasClusteredClient(final GdbClient gdbClient, final Map<String,String> aliases, final GdbClient.Settings settings) {
+        AliasClusteredClient(final GdbClient gdbClient, final Map<String, String> aliases, final GdbClient.Settings settings) {
             super(gdbClient.cluster, settings);
             this.gdbClient = gdbClient;
             this.aliases.putAll(aliases);
@@ -670,9 +755,10 @@ public abstract class GdbClient {
             // overrides which should be mucked with
             if (!aliases.isEmpty()) {
                 final Map original = (Map) msg.getArgs().getOrDefault(Tokens.ARGS_ALIASES, Collections.emptyMap());
-                aliases.forEach((k,v) -> {
-                    if (!original.containsKey(k))
+                aliases.forEach((k, v) -> {
+                    if (!original.containsKey(k)) {
                         builder.addArg(Tokens.ARGS_ALIASES, aliases);
+                    }
                 });
             }
 
@@ -686,7 +772,9 @@ public abstract class GdbClient {
 
         @Override
         public synchronized GdbClient init() {
-            if (close.isDone()) throw new IllegalStateException("GdbClient is closed");
+            if (close.isDone()) {
+                throw new IllegalStateException("GdbClient is closed");
+            }
 
             // the underlying gdbClient may not have been init'd
             gdbClient.init();
@@ -696,9 +784,12 @@ public abstract class GdbClient {
 
         @Override
         public RequestMessage.Builder buildMessage(final RequestMessage.Builder builder) {
-            if (close.isDone()) throw new IllegalStateException("GdbClient is closed");
-            if (!aliases.isEmpty())
+            if (close.isDone()) {
+                throw new IllegalStateException("GdbClient is closed");
+            }
+            if (!aliases.isEmpty()) {
                 builder.addArg(Tokens.ARGS_ALIASES, aliases);
+            }
 
             return gdbClient.buildMessage(builder);
         }
@@ -706,16 +797,20 @@ public abstract class GdbClient {
         @Override
         protected void initializeImplementation() {
             // no init required
-            if (close.isDone()) throw new IllegalStateException("GdbClient is closed");
+            if (close.isDone()) {
+                throw new IllegalStateException("GdbClient is closed");
+            }
         }
 
         /**
          * Delegates to the underlying {@link ClusteredClient}.
          */
         @Override
-        protected GdbConnection chooseConnection(final RequestMessage msg) throws TimeoutException, ConnectionException {
-            if (close.isDone()) throw new IllegalStateException("GdbClient is closed");
-            return gdbClient.chooseConnection(msg);
+        protected GdbConnection chooseConnection(final RequestMessage msg, boolean isReqRead, Collection<GdbHost> deadHosts) throws TimeoutException, ConnectionException {
+            if (close.isDone()) {
+                throw new IllegalStateException("GdbClient is closed");
+            }
+            return gdbClient.chooseConnection(msg, isReqRead, deadHosts);
         }
 
         /**
@@ -738,7 +833,9 @@ public abstract class GdbClient {
          */
         @Override
         public GdbClient alias(final Map<String, String> aliases) {
-            if (close.isDone()) throw new IllegalStateException("GdbClient is closed");
+            if (close.isDone()) {
+                throw new IllegalStateException("GdbClient is closed");
+            }
             return new AliasClusteredClient(gdbClient, aliases, settings);
         }
     }
@@ -751,9 +848,9 @@ public abstract class GdbClient {
     public final static class SessionedClient extends GdbClient {
         private final String sessionId;
         private final boolean manageTransactions;
-        private GdbConnectionPool connectionPool;
         private final GraphTraversalSource g = AnonymousTraversalSource.traversal().withRemote(GdbDriverRemoteConnection.using(this));
         private final AtomicReference<CompletableFuture<Void>> closing = new AtomicReference<>(null);
+        private GdbConnectionPool connectionPool;
 
         SessionedClient(final GdbCluster cluster, final GdbClient.Settings settings) {
             super(cluster, settings);
@@ -780,7 +877,7 @@ public abstract class GdbClient {
          * Since the session is bound to a single host, simply borrow a connection from that pool.
          */
         @Override
-        protected GdbConnection chooseConnection(final RequestMessage msg) throws TimeoutException, ConnectionException {
+        protected GdbConnection chooseConnection(final RequestMessage msg, boolean isReqRead, Collection<GdbHost> deadHosts) throws TimeoutException, ConnectionException {
             return connectionPool.borrowConnection(cluster.connectionPoolSettings().maxWaitForConnection, TimeUnit.MILLISECONDS);
         }
 
@@ -790,9 +887,11 @@ public abstract class GdbClient {
         @Override
         protected void initializeImplementation() {
             // chooses an available host at random
-            final List<GdbHost> hosts = cluster.allHosts()
+            final List<GdbHost> hosts = cluster.allMasterHosts()
                     .stream().filter(GdbHost::isAvailable).collect(Collectors.toList());
-            if (hosts.isEmpty()) throw new IllegalStateException("No available host in the cluster");
+            if (hosts.isEmpty()) {
+                throw new IllegalStateException("No available host in the cluster");
+            }
             Collections.shuffle(hosts);
             final GdbHost host = hosts.get(0);
             connectionPool = new GdbConnectionPool(host, this, Optional.of(1), Optional.of(1));
@@ -808,8 +907,9 @@ public abstract class GdbClient {
          */
         @Override
         public synchronized CompletableFuture<Void> closeAsync() {
-            if (closing.get() != null)
+            if (closing.get() != null) {
                 return closing.get();
+            }
 
             // the connection pool may not have been initialized if requests weren't sent across it. in those cases
             // we just need to return a pre-completed future
@@ -819,52 +919,28 @@ public abstract class GdbClient {
             return connectionPoolClose;
         }
 
-        public static class  transaction {
-            /**
-             * open a transaction
-             */
-            public  static void open(GdbClient client) {
-               String dsl = "g.tx().open()";
-               client.submit(dsl, new HashMap<>(0)).all().join();
-            }
-
-            public static void commit(GdbClient client) {
-               try {
-                   String dsl = "g.tx().commit()";
-                   client.submit(dsl, new HashMap<>(0)).all().join();
-               } catch (Exception ex) {
-                   System.out.println("rollback");
-                   throw new RuntimeException(ex);
-               }
-            }
-
-            public static void rollback(GdbClient client) {
-               String dsl = "g.tx().rollback()";
-               client.submit(dsl, new HashMap<>(0)).all().join();
-            }
-
-        }
-
         /**
          * run a bath request in one transaction
+         *
          * @param work
          * @param <T>
          */
         @Override
-        public <T extends GdbClient,U extends GraphTraversalSource> void batchTransaction(BatchTransactionWork<T, U> work) throws  RuntimeException {
-           try {
+        public <T extends GdbClient, U extends GraphTraversalSource> void batchTransaction(BatchTransactionWork<T, U> work) throws RuntimeException {
+            try {
                 transaction.open(this);
-                work.execute((T) this,(U)g);
+                work.execute((T) this, (U) g);
                 transaction.commit(this);
-           } catch (Throwable throwable) {
-               System.out.println("rollback");
-               transaction.rollback(this);
-               throw new RuntimeException(throwable);
-           }
+            } catch (Throwable throwable) {
+                System.out.println("rollback");
+                transaction.rollback(this);
+                throw new RuntimeException(throwable);
+            }
         }
 
         /**
          * receive traversal and then change into script
+         *
          * @param traversal
          * @return
          */
@@ -883,9 +959,9 @@ public abstract class GdbClient {
 
         /**
          * receive traversal and then change into script
-         * @param traversal
-         * @param options  other args
          *
+         * @param traversal
+         * @param options   other args
          * @return
          */
         @Override
@@ -901,6 +977,32 @@ public abstract class GdbClient {
             } catch (Exception ex) {
                 throw new RuntimeException(ex);
             }
+        }
+
+        public static class transaction {
+            /**
+             * open a transaction
+             */
+            public static void open(GdbClient client) {
+                String dsl = "g.tx().open()";
+                client.submit(dsl, new HashMap<>(0)).all().join();
+            }
+
+            public static void commit(GdbClient client) {
+                try {
+                    String dsl = "g.tx().commit()";
+                    client.submit(dsl, new HashMap<>(0)).all().join();
+                } catch (Exception ex) {
+                    System.out.println("rollback");
+                    throw new RuntimeException(ex);
+                }
+            }
+
+            public static void rollback(GdbClient client) {
+                String dsl = "g.tx().rollback()";
+                client.submit(dsl, new HashMap<>(0)).all().join();
+            }
+
         }
     }
 
@@ -929,7 +1031,8 @@ public abstract class GdbClient {
         public static class Builder {
             private Optional<GdbClient.SessionSettings> session = Optional.empty();
 
-            private Builder() {}
+            private Builder() {
+            }
 
             /**
              * Enables a session. By default this will create a random session name and configure transactions to be
@@ -982,6 +1085,10 @@ public abstract class GdbClient {
             forceClosed = builder.forceClosed;
         }
 
+        public static GdbClient.SessionSettings.Builder build() {
+            return new GdbClient.SessionSettings.Builder();
+        }
+
         /**
          * If enabled, transactions will be "managed" such that each request will represent a complete transaction.
          */
@@ -1004,16 +1111,13 @@ public abstract class GdbClient {
             return forceClosed;
         }
 
-        public static GdbClient.SessionSettings.Builder build() {
-            return new GdbClient.SessionSettings.Builder();
-        }
-
         public static class Builder {
             private boolean manageTransactions = false;
             private String sessionId = UUID.randomUUID().toString();
             private boolean forceClosed = false;
 
-            private Builder() {}
+            private Builder() {
+            }
 
             /**
              * If enabled, transactions will be "managed" such that each request will represent a complete transaction.
@@ -1029,8 +1133,9 @@ public abstract class GdbClient {
              * a random {@code UUID}.
              */
             public GdbClient.SessionSettings.Builder sessionId(final String sessionId) {
-                if (null == sessionId || sessionId.isEmpty())
+                if (null == sessionId || sessionId.isEmpty()) {
                     throw new IllegalArgumentException("sessionId cannot be null or empty");
+                }
                 this.sessionId = sessionId;
                 return this;
             }

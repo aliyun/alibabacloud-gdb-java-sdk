@@ -44,8 +44,6 @@ import static org.apache.tinkerpop.gremlin.driver.Tokens.REQUEST_ID;
 /**
  * A {@link RemoteConnection} implementation for Gremlin Server. Each {@code DriverServerConnection} is bound to one
  * graph instance hosted in Gremlin Server.
- *
- * @author Stephen Mallette (http://stephen.genoprime.com)
  */
 public class GdbDriverRemoteConnection implements RemoteConnection {
 
@@ -64,18 +62,20 @@ public class GdbDriverRemoteConnection implements RemoteConnection {
 
     public GdbDriverRemoteConnection(final Configuration conf) {
         final boolean hasGdbClusterConf = IteratorUtils.anyMatch(conf.getKeys(), k -> k.startsWith("clusterConfiguration"));
-        if (conf.containsKey(GREMLIN_REMOTE_DRIVER_CLUSTERFILE) && hasGdbClusterConf)
+        if (conf.containsKey(GREMLIN_REMOTE_DRIVER_CLUSTERFILE) && hasGdbClusterConf) {
             throw new IllegalStateException(String.format("A configuration should not contain both '%s' and 'clusterConfiguration'", GREMLIN_REMOTE_DRIVER_CLUSTERFILE));
+        }
 
         remoteTraversalSourceName = conf.getString(GREMLIN_REMOTE_DRIVER_SOURCENAME, DEFAULT_TRAVERSAL_SOURCE);
 
         try {
             final GdbCluster cluster;
-            if (!conf.containsKey(GREMLIN_REMOTE_DRIVER_CLUSTERFILE) && !hasGdbClusterConf)
+            if (!conf.containsKey(GREMLIN_REMOTE_DRIVER_CLUSTERFILE) && !hasGdbClusterConf) {
                 cluster = GdbCluster.open();
-            else
+            } else {
                 cluster = conf.containsKey(GREMLIN_REMOTE_DRIVER_CLUSTERFILE) ?
                         GdbCluster.open(conf.getString(GREMLIN_REMOTE_DRIVER_CLUSTERFILE)) : GdbCluster.open(conf.subset("clusterConfiguration"));
+            }
 
             client = cluster.connect(GdbClient.Settings.build().create()).alias(remoteTraversalSourceName);
         } catch (Exception ex) {
@@ -203,16 +203,18 @@ public class GdbDriverRemoteConnection implements RemoteConnection {
      * {@code DriverServerConnection} which graph on the server to bind to.
      */
     public static GdbDriverRemoteConnection using(final Configuration conf) {
-        if (conf.containsKey("clusterConfigurationFile") && conf.containsKey("clusterConfiguration"))
+        if (conf.containsKey("clusterConfigurationFile") && conf.containsKey("clusterConfiguration")) {
             throw new IllegalStateException("A configuration should not contain both 'clusterConfigurationFile' and 'clusterConfiguration'");
+        }
 
-        if (!conf.containsKey("clusterConfigurationFile") && !conf.containsKey("clusterConfiguration"))
+        if (!conf.containsKey("clusterConfigurationFile") && !conf.containsKey("clusterConfiguration")) {
             throw new IllegalStateException("A configuration must contain either 'clusterConfigurationFile' and 'clusterConfiguration'");
+        }
 
         final String remoteTraversalSourceName = conf.getString(DEFAULT_TRAVERSAL_SOURCE, DEFAULT_TRAVERSAL_SOURCE);
-        if (conf.containsKey("clusterConfigurationFile"))
+        if (conf.containsKey("clusterConfigurationFile")) {
             return using(conf.getString("clusterConfigurationFile"), remoteTraversalSourceName);
-        else {
+        } else {
             return using(GdbCluster.open(conf.subset("clusterConfiguration")), remoteTraversalSourceName);
         }
     }
@@ -232,12 +234,13 @@ public class GdbDriverRemoteConnection implements RemoteConnection {
         while (itty.hasNext()) {
             final OptionsStrategy optionsStrategy = itty.next();
             final Map<String,Object> options = optionsStrategy.getOptions();
-            if (options.containsKey(ARGS_SCRIPT_EVAL_TIMEOUT))
+            if (options.containsKey(ARGS_SCRIPT_EVAL_TIMEOUT)) {
                 builder.timeout((long) options.get(ARGS_SCRIPT_EVAL_TIMEOUT));
-            else if (options.containsKey(REQUEST_ID))
+            } else if (options.containsKey(REQUEST_ID)) {
                 builder.overrideRequestId((UUID) options.get(REQUEST_ID));
-            else if (options.containsKey(ARGS_BATCH_SIZE))
+            } else if (options.containsKey(ARGS_BATCH_SIZE)) {
                 builder.batchSize((int) options.get(ARGS_BATCH_SIZE));
+            }
         }
         return builder.create();
     }
@@ -245,13 +248,15 @@ public class GdbDriverRemoteConnection implements RemoteConnection {
     @Override
     public void close() throws Exception {
         try {
-            if (tryCloseGdbClient)
+            if (tryCloseGdbClient) {
                 client.close();
+            }
         } catch (Exception ex) {
             throw new RemoteConnectionException(ex);
         } finally {
-            if (tryCloseGdbCluster)
+            if (tryCloseGdbCluster) {
                 client.getGdbCluster().close();
+            }
         }
     }
 

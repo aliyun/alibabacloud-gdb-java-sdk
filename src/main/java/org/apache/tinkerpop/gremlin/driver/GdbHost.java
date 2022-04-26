@@ -31,25 +31,29 @@ import java.util.function.Function;
 
 /**
  * Identifies a server within the {@link GdbCluster} at a specific address.
- *
- * @author Stephen Mallette (http://stephen.genoprime.com)
  */
 public final class GdbHost {
+    enum Role {
+        MASTER,
+        READONLY
+    };
+
     private static final Logger logger = LoggerFactory.getLogger(GdbHost.class);
     private final InetSocketAddress address;
     private final URI hostUri;
     private volatile boolean isAvailable;
     private final GdbCluster cluster;
     private final String hostLabel;
-
+    private final Role role;
     final AtomicReference<Boolean> retryInProgress = new AtomicReference<>(Boolean.FALSE);
     ScheduledFuture<?> retryThread = null;
 
-    GdbHost(final InetSocketAddress address, final GdbCluster cluster) {
+    GdbHost(final InetSocketAddress address, final Role role, final GdbCluster cluster) {
         this.cluster = cluster;
         this.address = address;
+        this.role = role;
         this.hostUri = makeUriFromAddress(address, cluster.getPath(), cluster.connectionPoolSettings().enableSsl);
-        hostLabel = String.format("GdbHost{address=%s, hostUri=%s}", address, hostUri);
+        hostLabel = String.format("GdbHost{address=%s, hostUri=%s, role=%s}", address, hostUri, role.toString());
     }
 
     public InetSocketAddress getAddress() {
@@ -59,6 +63,10 @@ public final class GdbHost {
     public URI getHostUri() {
         return hostUri;
     }
+
+    public boolean isMaster() {return role == Role.MASTER;}
+
+    public boolean isReadOnly() {return role != Role.MASTER;}
 
     public boolean isAvailable() {
         return isAvailable;
@@ -70,8 +78,9 @@ public final class GdbHost {
 
     void makeUnavailable(final Function<GdbHost, Boolean> reconnect) {
 
-        if (isAvailable)
+        if (isAvailable) {
             logger.warn("Marking {} as unavailable. Trying to reconnect.", this);
+        }
 
         isAvailable = false;
 
@@ -79,7 +88,9 @@ public final class GdbHost {
         if (retryInProgress.compareAndSet(Boolean.FALSE, Boolean.TRUE)) {
             retryThread = this.cluster.executor().scheduleAtFixedRate(() -> {
                     logger.debug("Trying to reconnect to dead host at {}", this);
-                    if (reconnect.apply(this)) reconnected();
+                    if (reconnect.apply(this)) {
+                        reconnected();
+                    }
                 }, cluster.connectionPoolSettings().reconnectInterval,
                 cluster.connectionPoolSettings().reconnectInterval, TimeUnit.MILLISECONDS);
         }
@@ -101,6 +112,11 @@ public final class GdbHost {
         } catch (URISyntaxException use) {
             throw new RuntimeException(String.format("URI for host could not be constructed from: %s", addy), use);
         }
+    }
+
+    @Override
+    public int hashCode() {
+        return address.hashCode();
     }
 
     @Override

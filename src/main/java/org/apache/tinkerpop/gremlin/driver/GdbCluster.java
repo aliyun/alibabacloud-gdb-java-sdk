@@ -56,8 +56,6 @@ import java.util.stream.Collectors;
 
 /**
  * A connection to a set of one or more Gremlin Server instances.
- *
- * @author Stephen Mallette (http://stephen.genoprime.com)
  */
 public final class GdbCluster {
     private static final Logger logger = LoggerFactory.getLogger(GdbCluster.class);
@@ -69,10 +67,26 @@ public final class GdbCluster {
     }
 
     public synchronized void init() {
-        if (!manager.initialized)
+        if (!manager.initialized) {
             manager.init();
+        }
     }
 
+    public boolean clusterReadMode() {
+        return manager.getClusterReadMode();
+    }
+
+    public int getRetryCnt() {
+        return manager.getRetryCnt();
+    }
+
+    public boolean getKickTimeoutReadonlyHost() {
+        return manager.getKickTimeoutReadonlyHost();
+    }
+
+    public int getDefaultReadonlyTimeout() {
+        return manager.getDefaultReadonlyTimeout();
+    }
     /**
      * Creates a {@link GdbClient.ClusteredClient} instance to this {@code Cluster}, meaning requests will be routed to
      * one or more servers (depending on the cluster configuration), where each request represents the entirety of a
@@ -90,7 +104,7 @@ public final class GdbCluster {
     }
 
     /**
-     * Creates a {@link GdbClient.SessionedGdbClient} instance to this {@code Cluster}, meaning requests will be routed to
+     * Creates a {@link GdbClient.SessionedClient} instance to this {@code Cluster}, meaning requests will be routed to
      * a single server (randomly selected from the cluster), where the same bindings will be available on each request.
      * Requests are bound to the same thread on the server and thus transactions may extend beyond the bounds of a
      * single request.  The transactions are managed by the user and must be committed or rolled-back manually.
@@ -107,7 +121,7 @@ public final class GdbCluster {
     }
 
     /**
-     * Creates a {@link GdbClient.SessionedGdbClient} instance to this {@code Cluster}, meaning requests will be routed to
+     * Creates a {@link GdbClient.SessionedClient} instance to this {@code Cluster}, meaning requests will be routed to
      * a single server (randomly selected from the cluster), where the same bindings will be available on each request.
      * Requests are bound to the same thread on the server and thus transactions may extend beyond the bounds of a
      * single request.  If {@code manageTransactions} is set to {@code false} then transactions are managed by the
@@ -159,16 +173,27 @@ public final class GdbCluster {
     }
 
     private static Builder getBuilderFromSettings(final GdbSettings settings) {
-        final List<String> addresses = settings.hosts;
-        if (addresses.size() == 0)
-            throw new IllegalStateException("At least one value must be specified to the hosts setting");
+        final List<String> masterHost = settings.hosts;
+        final List<String> readonlyHost = settings.readonlyHostsHA.readonlyHosts;
+        boolean clusterReadMode = settings.readonlyHostsHA.state;
 
+        if (readonlyHost.size() == 0) {
+            clusterReadMode = false;
+        }
+
+        if (masterHost.size() == 0) {
+            throw new IllegalStateException("At least one value must be specified to the hosts setting");
+        }
         final Builder builder = new Builder(settings.hosts.get(0))
                 .port(settings.port)
                 .path(settings.path)
+                .retryCnt(settings.readonlyHostsHA.retryCnt)
+                .kickTimeoutReadonlyHost((settings.readonlyHostsHA.timeoutPolicy == 0) ? true : false)
+                .defaultReadonlyTimeout(settings.readonlyHostsHA.defaultTimeout)
                 .enableSsl(settings.connectionPool.enableSsl)
                 .trustCertificateChainFile(settings.connectionPool.trustCertChainFile)
                 .keepAliveInterval(settings.connectionPool.keepAliveInterval)
+                .clusterReadMode(clusterReadMode)
                 .keyCertChainFile(settings.connectionPool.keyCertChainFile)
                 .keyFile(settings.connectionPool.keyFile)
                 .keyPassword(settings.connectionPool.keyPassword)
@@ -195,19 +220,26 @@ public final class GdbCluster {
                 .minConnectionPoolSize(settings.connectionPool.minSize)
                 .validationRequest(settings.connectionPool.validationRequest);
 
-        if (settings.username != null && settings.password != null)
+        if (settings.username != null && settings.password != null) {
             builder.credentials(settings.username, settings.password);
+        }
 
-        if (settings.jaasEntry != null)
+        if (settings.jaasEntry != null) {
             builder.jaasEntry(settings.jaasEntry);
+        }
 
-        if (settings.protocol != null)
+        if (settings.protocol != null) {
             builder.protocol(settings.protocol);
+        }
 
         // the first address was added above in the constructor, so skip it if there are more
-        if (addresses.size() > 1)
-            addresses.stream().skip(1).forEach(builder::addContactPoint);
+        if (masterHost.size() > 1) {
+            masterHost.stream().skip(1).forEach(builder::addMasterPoint);
+        }
 
+        if (clusterReadMode) {
+            readonlyHost.stream().forEach(builder::addReadonlyPoint);
+        }
         try {
             builder.serializer(settings.serializer.create());
         } catch (Exception ex) {
@@ -236,8 +268,9 @@ public final class GdbCluster {
      */
     public static GdbCluster open(final String configurationFile) throws Exception {
         final File file = new File(configurationFile);
-        if (!file.exists())
+        if (!file.exists()) {
             throw new IllegalArgumentException(String.format("Configuration file at %s does not exist", configurationFile));
+        }
 
         return build(file).create();
     }
@@ -274,7 +307,7 @@ public final class GdbCluster {
      * from this method will change as different servers come on and offline.
      */
     public List<URI> availableHosts() {
-        return Collections.unmodifiableList(allHosts().stream()
+        return Collections.unmodifiableList(allMasterHosts().stream()
                 .filter(GdbHost::isAvailable)
                 .map(GdbHost::getHostUri)
                 .collect(Collectors.toList()));
@@ -426,8 +459,12 @@ public final class GdbCluster {
     /**
      * Gets a list of all the configured hosts.
      */
-    public Collection<GdbHost> allHosts() {
-        return Collections.unmodifiableCollection(manager.allHosts());
+    public Collection<GdbHost> allMasterHosts() {
+        return Collections.unmodifiableCollection(manager.allMasterHosts());
+    }
+
+    public Collection<GdbHost> allReadonlyHosts() {
+        return Collections.unmodifiableCollection(manager.allReadonlyHosts());
     }
 
     Factory getFactory() {
@@ -460,8 +497,9 @@ public final class GdbCluster {
 
     SslContext createSSLContext() throws Exception {
         // if the context is provided then just use that and ignore the other settings
-        if (manager.sslContextOptional.isPresent())
+        if (manager.sslContextOptional.isPresent()) {
             return manager.sslContextOptional.get();
+        }
 
         final SslProvider provider = SslProvider.JDK;
         final GdbSettings.ConnectionPoolSettings connectionPoolSettings = connectionPoolSettings();
@@ -539,7 +577,11 @@ public final class GdbCluster {
     }
 
     public final static class Builder {
-        private List<InetAddress> addresses = new ArrayList<>();
+        private List<InetAddress> masterHost = new ArrayList<>();
+        private List<InetAddress> readonlyHosts = new ArrayList<>();
+        private int retryCnt = 1;
+        private boolean kickTimeoutReadonlyHost = true;
+        private int defaultReadonlyTimeout = -1;
         private int port = 8182;
         private String path = "/gremlin";
         private MessageSerializer serializer = Serializers.GRYO_V3D0.simpleInstance();
@@ -557,6 +599,7 @@ public final class GdbCluster {
         private int reconnectInterval = GdbConnection.RECONNECT_INTERVAL;
         private int resultIterationBatchSize = GdbConnection.RESULT_ITERATION_BATCH_SIZE;
         private long keepAliveInterval = GdbConnection.KEEP_ALIVE_INTERVAL;
+        private boolean clusterReadMode = false;
         private String channelizer = GdbChannelizer.WebSocketChannelizer.class.getName();
         private boolean enableSsl = false;
         private String trustCertChainFile = null;
@@ -581,7 +624,7 @@ public final class GdbCluster {
         }
 
         private Builder(final String address) {
-            addContactPoint(address);
+            addMasterPoint(address);
         }
 
         /**
@@ -674,6 +717,11 @@ public final class GdbCluster {
          */
         public Builder keepAliveInterval(final long keepAliveInterval) {
             this.keepAliveInterval = keepAliveInterval;
+            return this;
+        }
+
+        public Builder clusterReadMode(boolean clusterReadMode) {
+            this.clusterReadMode = clusterReadMode;
             return this;
         }
 
@@ -955,9 +1003,18 @@ public final class GdbCluster {
          * requests to.  The address should be parseable by {@link InetAddress#getByName(String)}.  That's the only
          * validation performed at this point.  No connection to the host is attempted.
          */
-        public Builder addContactPoint(final String address) {
+        public Builder addMasterPoint(final String address) {
             try {
-                this.addresses.add(InetAddress.getByName(address));
+                this.masterHost.add(InetAddress.getByName(address));
+                return this;
+            } catch (UnknownHostException e) {
+                throw new IllegalArgumentException(e.getMessage());
+            }
+        }
+
+        public Builder addReadonlyPoint(final String address) {
+            try {
+                this.readonlyHosts.add(InetAddress.getByName(address));
                 return this;
             } catch (UnknownHostException e) {
                 throw new IllegalArgumentException(e.getMessage());
@@ -970,8 +1027,9 @@ public final class GdbCluster {
          * That's the only validation performed at this point.  No connection to the host is attempted.
          */
         public Builder addContactPoints(final String... addresses) {
-            for (String address : addresses)
-                addContactPoint(address);
+            for (String address : addresses) {
+                addMasterPoint(address);
+            }
             return this;
         }
 
@@ -983,13 +1041,50 @@ public final class GdbCluster {
             return this;
         }
 
-        List<InetSocketAddress> getContactPoints() {
-            return addresses.stream().map(addy -> new InetSocketAddress(addy, port)).collect(Collectors.toList());
+        List<InetSocketAddress> getMasterPoints() {
+            return masterHost.stream().map(addy -> new InetSocketAddress(addy, port)).collect(Collectors.toList());
+        }
+
+        List<InetSocketAddress> getReadonlyPoints() {
+            return readonlyHosts.stream().map(addy -> new InetSocketAddress(addy, port)).collect(Collectors.toList());
+        }
+
+        public int getRetryCnt() {
+            return retryCnt;
+        }
+
+        public boolean getKickTimeoutReadonlyHost() {
+            return kickTimeoutReadonlyHost;
+        }
+
+        public int getDefaultReadonlyTimeout() {
+            return defaultReadonlyTimeout;
+        }
+
+        public boolean getClusterReadMode() {
+            return clusterReadMode;
         }
 
         public GdbCluster create() {
-            if (addresses.size() == 0) addContactPoint("localhost");
+            if (masterHost.size() == 0) {
+                addMasterPoint("localhost");
+            }
             return new GdbCluster(this);
+        }
+
+        public Builder retryCnt(int retryCnt) {
+            this.retryCnt = retryCnt;
+            return this;
+        }
+
+        public Builder kickTimeoutReadonlyHost(boolean kick) {
+            this.kickTimeoutReadonlyHost = kick;
+            return this;
+        }
+
+        public Builder defaultReadonlyTimeout(int timeout) {
+            this.defaultReadonlyTimeout = timeout;
+            return this;
         }
     }
 
@@ -1013,9 +1108,15 @@ public final class GdbCluster {
     }
 
     class Manager {
-        private final ConcurrentMap<InetSocketAddress, GdbHost> hosts = new ConcurrentHashMap<>();
+        private final ConcurrentMap<InetSocketAddress, GdbHost> masterHosts = new ConcurrentHashMap<>();
+        private final ConcurrentMap<InetSocketAddress, GdbHost> readonlyHosts = new ConcurrentHashMap<>();
         private boolean initialized;
-        private final List<InetSocketAddress> contactPoints;
+        private final List<InetSocketAddress> masterPoints;
+        private final List<InetSocketAddress> readonlyPoints;
+        private final int retryCnt;
+        private final boolean kickTimeoutReadonlyHost;
+        private final int defaultReadonlyTimeout;
+        private final boolean clusterReadMode;
         private final Factory factory;
         private final MessageSerializer serializer;
         private final GdbSettings.ConnectionPoolSettings connectionPoolSettings;
@@ -1040,8 +1141,12 @@ public final class GdbCluster {
 
             this.loadBalancingStrategy = builder.loadBalancingStrategy;
             this.authProps = builder.authProps;
-            this.contactPoints = builder.getContactPoints();
-
+            this.masterPoints = builder.getMasterPoints();
+            this.readonlyPoints = builder.getReadonlyPoints();
+            this.clusterReadMode = builder.getClusterReadMode();
+            this.retryCnt = builder.getRetryCnt();
+            this.kickTimeoutReadonlyHost = builder.getKickTimeoutReadonlyHost();
+            this.defaultReadonlyTimeout = builder.getDefaultReadonlyTimeout();
             connectionPoolSettings = new GdbSettings.ConnectionPoolSettings();
             connectionPoolSettings.maxInProcessPerConnection = builder.maxInProcessPerConnection;
             connectionPoolSettings.minInProcessPerConnection = builder.minInProcessPerConnection;
@@ -1089,65 +1194,90 @@ public final class GdbCluster {
         }
 
         private void validateBuilder(final Builder builder) {
-            if (builder.minInProcessPerConnection < 0)
+            if (builder.minInProcessPerConnection < 0) {
                 throw new IllegalArgumentException("minInProcessPerConnection must be greater than or equal to zero");
+            }
 
-            if (builder.maxInProcessPerConnection < 1)
+            if (builder.maxInProcessPerConnection < 1) {
                 throw new IllegalArgumentException("maxInProcessPerConnection must be greater than zero");
+            }
 
-            if (builder.minInProcessPerConnection > builder.maxInProcessPerConnection)
+            if (builder.minInProcessPerConnection > builder.maxInProcessPerConnection) {
                 throw new IllegalArgumentException("maxInProcessPerConnection cannot be less than minInProcessPerConnection");
+            }
 
-            if (builder.minSimultaneousUsagePerConnection < 0)
+            if (builder.minSimultaneousUsagePerConnection < 0) {
                 throw new IllegalArgumentException("minSimultaneousUsagePerConnection must be greater than or equal to zero");
+            }
 
-            if (builder.maxSimultaneousUsagePerConnection < 1)
+            if (builder.maxSimultaneousUsagePerConnection < 1) {
                 throw new IllegalArgumentException("maxSimultaneousUsagePerConnection must be greater than zero");
+            }
 
-            if (builder.minSimultaneousUsagePerConnection > builder.maxSimultaneousUsagePerConnection)
+            if (builder.minSimultaneousUsagePerConnection > builder.maxSimultaneousUsagePerConnection) {
                 throw new IllegalArgumentException("maxSimultaneousUsagePerConnection cannot be less than minSimultaneousUsagePerConnection");
+            }
 
-            if (builder.minConnectionPoolSize < 0)
+            if (builder.minConnectionPoolSize < 0) {
                 throw new IllegalArgumentException("minConnectionPoolSize must be greater than or equal to zero");
+            }
 
-            if (builder.maxConnectionPoolSize < 1)
+            if (builder.maxConnectionPoolSize < 1) {
                 throw new IllegalArgumentException("maxConnectionPoolSize must be greater than zero");
+            }
 
-            if (builder.minConnectionPoolSize > builder.maxConnectionPoolSize)
+            if (builder.minConnectionPoolSize > builder.maxConnectionPoolSize) {
                 throw new IllegalArgumentException("maxConnectionPoolSize cannot be less than minConnectionPoolSize");
+            }
 
-            if (builder.maxWaitForConnection < 1)
+            if (builder.maxWaitForConnection < 1) {
                 throw new IllegalArgumentException("maxWaitForConnection must be greater than zero");
+            }
 
-            if (builder.maxWaitForSessionClose < 1)
+            if (builder.maxWaitForSessionClose < 1) {
                 throw new IllegalArgumentException("maxWaitForSessionClose must be greater than zero");
+            }
 
-            if (builder.maxContentLength < 1)
+            if (builder.maxContentLength < 1) {
                 throw new IllegalArgumentException("maxContentLength must be greater than zero");
+            }
 
-            if (builder.reconnectInterval < 1)
+            if (builder.reconnectInterval < 1) {
                 throw new IllegalArgumentException("reconnectInterval must be greater than zero");
+            }
 
-            if (builder.resultIterationBatchSize < 1)
+            if (builder.resultIterationBatchSize < 1) {
                 throw new IllegalArgumentException("resultIterationBatchSize must be greater than zero");
+            }
 
-            if (builder.nioPoolSize < 1)
+            if (builder.nioPoolSize < 1) {
                 throw new IllegalArgumentException("nioPoolSize must be greater than zero");
+            }
 
-            if (builder.workerPoolSize < 1)
+            if (builder.workerPoolSize < 1) {
                 throw new IllegalArgumentException("workerPoolSize must be greater than zero");
+            }
         }
 
         synchronized void init() {
-            if (initialized)
+            if (initialized) {
                 return;
+            }
 
             initialized = true;
 
-            contactPoints.forEach(address -> {
-                final GdbHost host = add(address);
-                if (host != null)
+            masterPoints.forEach(master -> {
+                final GdbHost host = addMaster(master);
+                if (host != null) {
                     host.makeAvailable();
+                }
+            });
+
+            readonlyPoints.forEach(master -> {
+                final GdbHost host = addReadonlyHosts(master);
+                if (host != null) {
+                    host.makeAvailable();
+                }
             });
         }
 
@@ -1155,20 +1285,48 @@ public final class GdbCluster {
             openedGdbClients.add(new WeakReference<>(client));
         }
 
-        public GdbHost add(final InetSocketAddress address) {
-            final GdbHost newHost = new GdbHost(address, GdbCluster.this);
-            final GdbHost previous = hosts.putIfAbsent(address, newHost);
+        public GdbHost addMaster(final InetSocketAddress address) {
+            final GdbHost newHost = new GdbHost(address, GdbHost.Role.MASTER, GdbCluster.this);
+            final GdbHost previous = masterHosts.putIfAbsent(address, newHost);
             return previous == null ? newHost : null;
         }
 
-        Collection<GdbHost> allHosts() {
-            return hosts.values();
+        public GdbHost addReadonlyHosts(final InetSocketAddress address) {
+            final GdbHost newHost = new GdbHost(address, GdbHost.Role.READONLY, GdbCluster.this);
+            final GdbHost previous = readonlyHosts.putIfAbsent(address, newHost);
+            return previous == null ? newHost : null;
+        }
+
+        Collection<GdbHost> allMasterHosts() {
+            return masterHosts.values();
+        }
+
+        Collection<GdbHost> allReadonlyHosts() {
+            return readonlyHosts.values();
+        }
+
+        public int getRetryCnt() {
+            return retryCnt;
+        }
+
+
+        public boolean getKickTimeoutReadonlyHost() {
+            return kickTimeoutReadonlyHost;
+        }
+
+        public int getDefaultReadonlyTimeout() {
+            return defaultReadonlyTimeout;
+        }
+
+        public boolean getClusterReadMode() {
+            return clusterReadMode;
         }
 
         synchronized CompletableFuture<Void> close() {
             // this method is exposed publicly in both blocking and non-blocking forms.
-            if (closeFuture.get() != null)
+            if (closeFuture.get() != null) {
                 return closeFuture.get();
+            }
 
             for (WeakReference<GdbClient> openedGdbClient : openedGdbClients) {
                 final GdbClient client = openedGdbClient.get();
@@ -1197,7 +1355,10 @@ public final class GdbCluster {
 
         @Override
         public String toString() {
-            return String.join(", ", contactPoints.stream().map(InetSocketAddress::toString).collect(Collectors.<String>toList()));
+            Collection<String> arrays = Arrays.asList("masterHost:",
+                    String.join(", ", masterPoints.stream().map(InetSocketAddress::toString).collect(Collectors.<String>toList())),
+                    "readonlyHosts:", String.join(", ", readonlyPoints.stream().map(InetSocketAddress::toString).collect(Collectors.<String>toList())));
+            return  String.join(", ", arrays);
         }
     }
 }
