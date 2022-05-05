@@ -169,8 +169,8 @@ final class GdbHandler {
                                          hostname, SASL_PROPERTIES, this);
         }
 
-        private String getHostName(final ChannelHandlerContext channelHandlerContext) {
-            return ((InetSocketAddress)channelHandlerContext.channel().remoteAddress()).getAddress().getCanonicalHostName();
+        private String getHostName(final ChannelHandlerContext channelHandlerContext)  {
+            return ((InetSocketAddress)channelHandlerContext.channel().remoteAddress()).getAddress().getHostAddress();
         }
 
         /**
