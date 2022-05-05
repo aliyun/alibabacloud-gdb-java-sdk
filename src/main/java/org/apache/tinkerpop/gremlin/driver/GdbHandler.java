@@ -170,8 +170,7 @@ final class GdbHandler {
         }
 
         private String getHostName(final ChannelHandlerContext channelHandlerContext)  {
-            byte[] address = ((InetSocketAddress)channelHandlerContext.channel().remoteAddress()).getAddress().getAddress();
-            return (address[0] & 0xff) + "." + (address[1] & 0xff) + "." + (address[2] & 0xff) + "." + (address[3] & 0xff);
+            return ((InetSocketAddress)channelHandlerContext.channel().remoteAddress()).getAddress().getHostAddress();
         }
 
         /**
