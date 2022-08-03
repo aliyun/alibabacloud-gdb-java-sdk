@@ -1,0 +1,15 @@
+alibabacloud-gdb-java-sdk
+
+This product is based on Apache TinkerPop gremlin-driver
+
+------------------------------------------------------------------------
+gremlin-driver
+------------------------------------------------------------------------
+Apache Tinkerpop
+Copyright 2015-2022 The Apache Software Foundation.
+
+The following file including
+GdbClient.java, GdbCluster.java, GdbConnection.java, GdbConnectionPool.java, GdbHandler.java, GdbHost.java,
+GdbLoadBalancingStrategy.java, GdbPackResultSet.java, GdbResult.java, GdbSettings.java, GdbDriverRemoteConnection.java
+GdbDriverRemoteTraversal.java, GdbDriverRemoteTraversalSideEffects.java from gremlin-driver and we add
+some code to support high-availability and provide more use cases
