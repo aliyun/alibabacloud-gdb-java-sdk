@@ -122,6 +122,9 @@ public class GdbDriverRemoteConnection implements RemoteConnection {
     /**
      * Creates a {@link GdbDriverRemoteConnection} using an existing {@link GdbClient} object. The {@link GdbClient} will not
      * be closed on calls to {@link #close()}.
+     *
+     * @param client the existing GdbClient to use
+     * @return a new GdbDriverRemoteConnection instance
      */
     public static GdbDriverRemoteConnection using(final GdbClient client) {
         return using(client, DEFAULT_TRAVERSAL_SOURCE);
@@ -130,6 +133,10 @@ public class GdbDriverRemoteConnection implements RemoteConnection {
     /**
      * Creates a {@link GdbDriverRemoteConnection} using an existing {@link GdbClient} object. The {@link GdbClient} will not
      * be closed on calls to {@link #close()}.
+     *
+     * @param client the existing GdbClient to use
+     * @param remoteTraversalSourceName the name of the remote traversal source to bind to
+     * @return a new GdbDriverRemoteConnection instance
      */
     public static GdbDriverRemoteConnection using(final GdbClient client, final String remoteTraversalSourceName) {
         return new GdbDriverRemoteConnection(client, remoteTraversalSourceName);
@@ -140,6 +147,10 @@ public class GdbDriverRemoteConnection implements RemoteConnection {
      * and port and binds it to a remote {@link GraphTraversalSource} named "g". When {@link #close()} is called,
      * this new {@link GdbCluster} is also closed. By default, this method will bind the {@link RemoteConnection} to a
      * graph on the server named "graph".
+     *
+     * @param host the host to connect to
+     * @param port the port to connect to
+     * @return a new GdbDriverRemoteConnection instance
      */
     public static GdbDriverRemoteConnection using(final String host, final int port) {
         return using(GdbCluster.build(host).port(port).create(), DEFAULT_TRAVERSAL_SOURCE);
@@ -150,6 +161,11 @@ public class GdbDriverRemoteConnection implements RemoteConnection {
      * port and aliases it to the specified remote {@link GraphTraversalSource}. When {@link #close()} is called, this
      * new {@link GdbCluster} is also closed. By default, this method will bind the {@link RemoteConnection} to the
      * specified graph traversal source name.
+     *
+     * @param host the host to connect to
+     * @param port the port to connect to
+     * @param remoteTraversalSourceName the name of the remote traversal source to bind to
+     * @return a new GdbDriverRemoteConnection instance
      */
     public static GdbDriverRemoteConnection using(final String host, final int port, final String remoteTraversalSourceName) {
         return using(GdbCluster.build(host).port(port).create(), remoteTraversalSourceName);
@@ -159,6 +175,9 @@ public class GdbDriverRemoteConnection implements RemoteConnection {
      * Creates a {@link GdbDriverRemoteConnection} from an existing {@link GdbCluster} instance. When {@link #close()} is
      * called, the {@link GdbCluster} is left open for the caller to close. By default, this method will bind the
      * {@link RemoteConnection} to a graph on the server named "graph".
+     *
+     * @param cluster the existing GdbCluster to use
+     * @return a new GdbDriverRemoteConnection instance
      */
     public static GdbDriverRemoteConnection using(final GdbCluster cluster) {
         return using(cluster, DEFAULT_TRAVERSAL_SOURCE);
@@ -167,6 +186,10 @@ public class GdbDriverRemoteConnection implements RemoteConnection {
     /**
      * Creates a {@link GdbDriverRemoteConnection} from an existing {@link GdbCluster} instance. When {@link #close()} is
      * called, the {@link GdbCluster} is left open for the caller to close.
+     *
+     * @param cluster the existing GdbCluster to use
+     * @param remoteTraversalSourceName the name of the remote traversal source to bind to
+     * @return a new GdbDriverRemoteConnection instance
      */
     public static GdbDriverRemoteConnection using(final GdbCluster cluster, final String remoteTraversalSourceName) {
         return new GdbDriverRemoteConnection(cluster, false, remoteTraversalSourceName);
@@ -176,6 +199,9 @@ public class GdbDriverRemoteConnection implements RemoteConnection {
      * Creates a {@link GdbDriverRemoteConnection} using a new {@link GdbCluster} instance created from the supplied
      * configuration file. When {@link #close()} is called, this new {@link GdbCluster} is also closed. By default,
      * this method will bind the {@link RemoteConnection} to a graph on the server named "graph".
+     *
+     * @param clusterConfFile the path to the cluster configuration file
+     * @return a new GdbDriverRemoteConnection instance
      */
     public static GdbDriverRemoteConnection using(final String clusterConfFile) {
         return using(clusterConfFile, DEFAULT_TRAVERSAL_SOURCE);
@@ -184,6 +210,10 @@ public class GdbDriverRemoteConnection implements RemoteConnection {
     /**
      * Creates a {@link GdbDriverRemoteConnection} using a new {@link GdbCluster} instance created from the supplied
      * configuration file. When {@link #close()} is called, this new {@link GdbCluster} is also closed.
+     *
+     * @param clusterConfFile the path to the cluster configuration file
+     * @param remoteTraversalSourceName the name of the remote traversal source to bind to
+     * @return a new GdbDriverRemoteConnection instance
      */
     public static GdbDriverRemoteConnection using(final String clusterConfFile, final String remoteTraversalSourceName) {
         try {
@@ -201,6 +231,9 @@ public class GdbDriverRemoteConnection implements RemoteConnection {
      * contents of a configuration that would be used by a {@link GdbCluster}.  This {@code configuration} may also
      * contain the optional, but likely necessary, {@code remoteTraversalSourceName} which tells the
      * {@code DriverServerConnection} which graph on the server to bind to.
+     *
+     * @param conf the configuration object containing cluster configuration
+     * @return a new GdbDriverRemoteConnection instance
      */
     public static GdbDriverRemoteConnection using(final Configuration conf) {
         if (conf.containsKey("clusterConfigurationFile") && conf.containsKey("clusterConfiguration")) {
@@ -219,6 +252,11 @@ public class GdbDriverRemoteConnection implements RemoteConnection {
         }
     }
 
+    /**
+     * @param bytecode the bytecode to submit
+     * @return a CompletableFuture containing the remote traversal
+     * @throws RemoteConnectionException if there is an error submitting the bytecode
+     */
     @Override
     public <E> CompletableFuture<RemoteTraversal<?, E>> submitAsync(final Bytecode bytecode) throws RemoteConnectionException {
         try {
@@ -228,6 +266,10 @@ public class GdbDriverRemoteConnection implements RemoteConnection {
         }
     }
 
+    /**
+     * @param bytecode the bytecode to extract options from
+     * @return the request options extracted from the bytecode
+     */
     protected static RequestOptions getRequestOptions(final Bytecode bytecode) {
         final Iterator<OptionsStrategy> itty = BytecodeUtil.findStrategies(bytecode, OptionsStrategy.class);
         final RequestOptions.Builder builder = RequestOptions.build();
@@ -245,6 +287,9 @@ public class GdbDriverRemoteConnection implements RemoteConnection {
         return builder.create();
     }
 
+    /**
+     * @throws Exception if there is an error closing the connection
+     */
     @Override
     public void close() throws Exception {
         try {
@@ -260,6 +305,9 @@ public class GdbDriverRemoteConnection implements RemoteConnection {
         }
     }
 
+    /**
+     * @return a string representation of this connection
+     */
     @Override
     public String toString() {
         return "DriverServerConnection-" + client.getGdbCluster() + " [graph=" + remoteTraversalSourceName + "]";

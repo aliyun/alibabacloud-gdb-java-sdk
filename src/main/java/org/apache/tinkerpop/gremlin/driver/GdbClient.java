@@ -56,7 +56,7 @@ import java.util.stream.Stream;
  * A {@code GdbClient} is constructed from a {@link GdbCluster} and represents a way to send messages to Gremlin Server.
  * This class itself is a base class as there are different implementations that provide differing kinds of
  * functionality.  See the implementations for specifics on their individual usage.
- * <p/>
+ * <p>
  * The {@code GdbClient} is designed to be re-used and shared across threads.
  */
 public abstract class GdbClient {
@@ -82,6 +82,8 @@ public abstract class GdbClient {
      * Makes any initial changes to the builder and returns the constructed {@link RequestMessage}.  Implementers
      * may choose to override this message to append data to the request before sending.  By default, this method
      * will simply return the {@code builder} passed in by the caller.
+     * @param builder the request message builder to modify
+     * @return the modified request message builder
      */
     public RequestMessage.Builder buildMessage(final RequestMessage.Builder builder) {
         return builder;
@@ -94,11 +96,18 @@ public abstract class GdbClient {
 
     /**
      * Chooses a {@link GdbConnection} to write the message to.
+     * @param msg the request message to be sent
+     * @param isReqRead whether the request is a read-only operation
+     * @param deadHosts collection of hosts that are known to be unavailable
+     * @return a connection to use for sending the message
+     * @throws TimeoutException if a connection cannot be obtained within the timeout period
+     * @throws ConnectionException if there is an error establishing a connection
      */
     protected abstract GdbConnection chooseConnection(final RequestMessage msg, boolean isReqRead, Collection<GdbHost> deadHosts) throws TimeoutException, ConnectionException;
 
     /**
      * Asynchronous close of the {@code GdbClient}.
+     * @return a future that completes when the client is closed
      */
     public abstract CompletableFuture<Void> closeAsync();
 
@@ -106,7 +115,10 @@ public abstract class GdbClient {
     /**
      * submit a serial query in one transaction
      *
-     * @param work
+     * @param <T> the type of client, extending GdbClient
+     * @param <U> the type of graph traversal source, extending GraphTraversalSource
+     * @param work the batch transaction work to execute
+     * @throws RuntimeException if the batch transaction fails
      */
     public <T extends GdbClient, U extends GraphTraversalSource> void batchTransaction(BatchTransactionWork<T, U> work) throws RuntimeException {
         throw new UnsupportedOperationException("batc htransaction unsupport");
@@ -117,6 +129,7 @@ public abstract class GdbClient {
      * server to a variable called "g" for the context of the requests made through that {@code GdbClient}.
      *
      * @param graphOrTraversalSource rebinds the specified global Gremlin Server variable to "g"
+     * @return a new GdbClient with the specified alias
      */
     public GdbClient alias(final String graphOrTraversalSource) {
         return alias(makeDefaultAliasMap(graphOrTraversalSource));
@@ -126,6 +139,8 @@ public abstract class GdbClient {
      * Creates a {@code GdbClient} that supplies the specified set of aliases, thus allowing the user to re-name
      * one or more globally defined {@link Graph} or {@link TraversalSource} server bindings for the context of
      * the created {@code GdbClient}.
+     * @param aliases a map of aliases where the key is the alias name and the value is the global variable name
+     * @return a new GdbClient with the specified aliases
      */
     public GdbClient alias(final Map<String, String> aliases) {
         return new AliasClusteredClient(this, aliases, settings);
@@ -136,6 +151,8 @@ public abstract class GdbClient {
      * instances and are therefore bulked, meaning that to properly iterate the contents of the result each
      * {@link Traverser#bulk()} must be examined to determine the number of times that object should be presented in
      * iteration.
+     * @param traversal the traversal to submit for execution
+     * @return a result set containing the results of the traversal execution
      */
     public GdbResultSet submit(final Traversal traversal) {
         try {
@@ -189,6 +206,8 @@ public abstract class GdbClient {
      * An asynchronous version of {@link #submit(Traversal)}. Results are returned as {@link Traverser} instances and
      * are therefore bulked, meaning that to properly iterate the contents of the result each {@link Traverser#bulk()}
      * must be examined to determine the number of times that object should be presented in iteration.
+     * @param traversal the traversal to submit for execution
+     * @return a future that completes with a result set containing the results of the traversal execution
      */
     public CompletableFuture<GdbResultSet> submitAsync(final Traversal traversal) {
         throw new UnsupportedOperationException("This implementation does not support Traversal submission - use a session GdbClient");
@@ -198,6 +217,9 @@ public abstract class GdbClient {
      * An asynchronous version of {@link #submit(Traversal)}. Results are returned as {@link Traverser} instances and
      * are therefore bulked, meaning that to properly iterate the contents of the result each {@link Traverser#bulk()}
      * must be examined to determine the number of times that object should be presented in iteration.
+     * @param traversal the traversal to submit for execution
+     * @param requestOptions options to configure the request
+     * @return a future that completes with a result set containing the results of the traversal execution
      */
     public CompletableFuture<GdbResultSet> submitAsync(final Traversal traversal, RequestOptions.Builder requestOptions) {
         throw new UnsupportedOperationException("This implementation does not support Traversal submission - use a session GdbClient");
@@ -208,6 +230,8 @@ public abstract class GdbClient {
      * instances and are therefore bulked, meaning that to properly iterate the contents of the result each
      * {@link Traverser#bulk()} must be examined to determine the number of times that object should be presented in
      * iteration.
+     * @param bytecode the bytecode to submit for execution
+     * @return a result set containing the results of the bytecode execution
      */
     public GdbResultSet submit(final Bytecode bytecode) {
         try {
@@ -224,6 +248,7 @@ public abstract class GdbClient {
      *
      * @param bytecode request in the form of gremlin {@link Bytecode}
      * @param options  for the request
+     * @return a result set containing the results of the bytecode execution
      * @see #submit(Bytecode)
      */
     public GdbResultSet submit(final Bytecode bytecode, final RequestOptions options) {
@@ -240,6 +265,8 @@ public abstract class GdbClient {
      * An asynchronous version of {@link #submit(Traversal)}. Results are returned as {@link Traverser} instances and
      * are therefore bulked, meaning that to properly iterate the contents of the result each {@link Traverser#bulk()}
      * must be examined to determine the number of times that object should be presented in iteration.
+     * @param bytecode the bytecode to submit for execution
+     * @return a future that completes with a result set containing the results of the bytecode execution
      */
     public CompletableFuture<GdbResultSet> submitAsync(final Bytecode bytecode) {
         throw new UnsupportedOperationException("This implementation does not support Traversal submission - use a sessionless GdbClient created with from the alias() method");
@@ -250,6 +277,7 @@ public abstract class GdbClient {
      *
      * @param bytecode request in the form of gremlin {@link Bytecode}
      * @param options  for the request
+     * @return a future that completes with a result set containing the results of the bytecode execution
      * @see #submitAsync(Bytecode)
      */
     public CompletableFuture<GdbResultSet> submitAsync(final Bytecode bytecode, final RequestOptions options) {
@@ -260,6 +288,7 @@ public abstract class GdbClient {
      * Initializes the gdbClient which typically means that a connection is established to the server.  Depending on the
      * implementation and configuration this blocking call may take some time.  This method will be called
      * automatically if it is not called directly and multiple calls will not have effect.
+     * @return the initialized GdbClient instance
      */
     public synchronized GdbClient init() {
         if (initialized) {
@@ -280,6 +309,7 @@ public abstract class GdbClient {
      * complete.
      *
      * @param gremlin the gremlin script to execute
+     * @return a result set containing the results of the script execution
      */
     public GdbResultSet submit(final String gremlin) {
         return submit(gremlin, RequestOptions.EMPTY);
@@ -293,6 +323,7 @@ public abstract class GdbClient {
      *
      * @param gremlin    the gremlin script to execute
      * @param parameters a map of parameters that will be bound to the script on execution
+     * @return a result set containing the results of the script execution
      */
     public GdbResultSet submit(final String gremlin, final Map<String, Object> parameters) {
         try {
@@ -347,6 +378,7 @@ public abstract class GdbClient {
      *
      * @param gremlin the gremlin script to execute
      * @param options for the request
+     * @return a result set containing the results of the script execution
      */
     public GdbResultSet submit(final String gremlin, final RequestOptions options) {
         try {
@@ -361,6 +393,7 @@ public abstract class GdbClient {
      * write of the request completes.
      *
      * @param gremlin the gremlin script to execute
+     * @return a future that completes with a result set containing the results of the script execution
      */
     public CompletableFuture<GdbResultSet> submitAsync(final String gremlin) {
         return submitAsync(gremlin, RequestOptions.build().create());
@@ -372,6 +405,7 @@ public abstract class GdbClient {
      *
      * @param gremlin    the gremlin script to execute
      * @param parameters a map of parameters that will be bound to the script on execution
+     * @return a future that completes with a result set containing the results of the script execution
      */
     public CompletableFuture<GdbResultSet> submitAsync(final String gremlin, final Map<String, Object> parameters) {
         final RequestOptions.Builder options = RequestOptions.build();
@@ -389,6 +423,7 @@ public abstract class GdbClient {
      * @param gremlin                the gremlin script to execute
      * @param parameters             a map of parameters that will be bound to the script on execution
      * @param graphOrTraversalSource rebinds the specified global Gremlin Server variable to "g"
+     * @return a future that completes with a result set containing the results of the script execution
      * @deprecated As of release 3.4.0, replaced by {@link #submitAsync(String, RequestOptions)}.
      */
     @Deprecated
@@ -411,6 +446,7 @@ public abstract class GdbClient {
      * @param aliases    aliases the specified global Gremlin Server variable some other name that then be used in the
      *                   script where the key is the alias name and the value represents the global variable on the
      *                   server
+     * @return a future that completes with a result set containing the results of the script execution
      * @deprecated As of release 3.4.0, replaced by {@link #submitAsync(String, RequestOptions)}.
      */
     @Deprecated
@@ -436,6 +472,7 @@ public abstract class GdbClient {
      *
      * @param gremlin the gremlin script to execute
      * @param options the options to supply for this request
+     * @return a future that completes with a result set containing the results of the script execution
      */
     public CompletableFuture<GdbResultSet> submitAsync(final String gremlin, final RequestOptions options) {
         final int batchSize = options.getBatchSize().orElse(cluster.connectionPoolSettings().resultIterationBatchSize);
@@ -491,6 +528,8 @@ public abstract class GdbClient {
      * A low-level method that allows the submission of a manually constructed {@link RequestMessage}.
      * may be gremlin / bytecode
      * may be retry at most retryCnt numbers
+     * @param msg the request message to submit
+     * @return a future that completes with a result set containing the results of the request execution
      */
     public CompletableFuture<GdbResultSet> submitAsync(final RequestMessage msg) {
         if (isClosing()) {
@@ -563,6 +602,7 @@ public abstract class GdbClient {
 
     /**
      * Gets the {@link GdbClient.Settings}.
+     * @return the settings for this client
      */
     public GdbClient.Settings getSettings() {
         return settings;
@@ -570,6 +610,7 @@ public abstract class GdbClient {
 
     /**
      * Gets the {@link GdbCluster} that spawned this {@code GdbClient}.
+     * @return the cluster that created this client
      */
     public GdbCluster getGdbCluster() {
         return cluster;
@@ -605,6 +646,8 @@ public abstract class GdbClient {
          * complete.
          *
          * @param gremlin the gremlin script to execute
+         * @param graphOrTraversalSource rebinds the specified global Gremlin Server variable to "g"
+         * @return a result set containing the results of the script execution
          */
         public GdbResultSet submit(final String gremlin, final String graphOrTraversalSource) {
             return submit(gremlin, graphOrTraversalSource, null);
@@ -619,6 +662,7 @@ public abstract class GdbClient {
          * @param gremlin                the gremlin script to execute
          * @param parameters             a map of parameters that will be bound to the script on execution
          * @param graphOrTraversalSource rebinds the specified global Gremlin Server variable to "g"
+         * @return a result set containing the results of the script execution
          */
         public GdbResultSet submit(final String gremlin, final String graphOrTraversalSource, final Map<String, Object> parameters) {
             try {
@@ -922,8 +966,10 @@ public abstract class GdbClient {
         /**
          * run a bath request in one transaction
          *
-         * @param work
-         * @param <T>
+         * @param <T> the type of client, extending GdbClient
+         * @param <U> the type of graph traversal source, extending GraphTraversalSource
+         * @param work the batch transaction work to execute
+         * @throws RuntimeException if the batch transaction fails
          */
         @Override
         public <T extends GdbClient, U extends GraphTraversalSource> void batchTransaction(BatchTransactionWork<T, U> work) throws RuntimeException {
@@ -941,8 +987,8 @@ public abstract class GdbClient {
         /**
          * receive traversal and then change into script
          *
-         * @param traversal
-         * @return
+         * @param traversal the traversal to submit for execution
+         * @return a result set containing the results of the traversal execution
          */
         @Override
         public GdbResultSet submit(final Traversal traversal) {
@@ -960,9 +1006,9 @@ public abstract class GdbClient {
         /**
          * receive traversal and then change into script
          *
-         * @param traversal
+         * @param traversal the traversal to submit for execution
          * @param options   other args
-         * @return
+         * @return a future that completes with a result set containing the results of the traversal execution
          */
         @Override
         public CompletableFuture<GdbResultSet> submitAsync(final Traversal traversal, RequestOptions.Builder options) {
@@ -982,6 +1028,7 @@ public abstract class GdbClient {
         public static class transaction {
             /**
              * open a transaction
+             * @param client the client to use for opening the transaction
              */
             public static void open(GdbClient client) {
                 String dsl = "g.tx().open()";
@@ -1023,6 +1070,7 @@ public abstract class GdbClient {
         /**
          * Determines if the {@link GdbClient} is to be constructed with a session. If the value is present, then a
          * session is expected.
+         * @return an optional containing the session settings if a session is enabled, empty otherwise
          */
         public Optional<GdbClient.SessionSettings> getSession() {
             return session;
@@ -1038,6 +1086,8 @@ public abstract class GdbClient {
              * Enables a session. By default this will create a random session name and configure transactions to be
              * unmanaged. This method will override settings provided by calls to the other overloads of
              * {@code useSession}.
+             * @param enabled whether to enable a session
+             * @return this builder instance
              */
             public GdbClient.Settings.Builder useSession(final boolean enabled) {
                 session = enabled ? Optional.of(GdbClient.SessionSettings.build().create()) : Optional.empty();
@@ -1048,6 +1098,8 @@ public abstract class GdbClient {
              * Enables a session. By default this will create a session with the provided name and configure
              * transactions to be unmanaged. This method will override settings provided by calls to the other
              * overloads of {@code useSession}.
+             * @param sessionId the session identifier to use
+             * @return this builder instance
              */
             public GdbClient.Settings.Builder useSession(final String sessionId) {
                 session = sessionId != null && !sessionId.isEmpty() ?
@@ -1058,6 +1110,8 @@ public abstract class GdbClient {
             /**
              * Enables a session. This method will override settings provided by calls to the other overloads of
              * {@code useSession}.
+             * @param settings the session settings to use
+             * @return this builder instance
              */
             public GdbClient.Settings.Builder useSession(final GdbClient.SessionSettings settings) {
                 session = Optional.ofNullable(settings);
@@ -1091,6 +1145,7 @@ public abstract class GdbClient {
 
         /**
          * If enabled, transactions will be "managed" such that each request will represent a complete transaction.
+         * @return true if transactions are managed, false otherwise
          */
         public boolean manageTransactions() {
             return manageTransactions;
@@ -1098,6 +1153,7 @@ public abstract class GdbClient {
 
         /**
          * Provides the identifier of the session.
+         * @return the session identifier
          */
         public String getSessionId() {
             return sessionId;
@@ -1106,6 +1162,7 @@ public abstract class GdbClient {
         /**
          * Determines if the session will be force closed. See {@link GdbClient.SessionSettings.Builder#forceClosed(boolean)} for more details
          * on what that means.
+         * @return true if the session will be force closed, false otherwise
          */
         public boolean isForceClosed() {
             return forceClosed;
@@ -1122,6 +1179,8 @@ public abstract class GdbClient {
             /**
              * If enabled, transactions will be "managed" such that each request will represent a complete transaction.
              * By default this value is {@code false}.
+             * @param manage whether to enable transaction management
+             * @return this builder instance
              */
             public GdbClient.SessionSettings.Builder manageTransactions(final boolean manage) {
                 manageTransactions = manage;
@@ -1131,6 +1190,8 @@ public abstract class GdbClient {
             /**
              * Provides the identifier of the session. This value cannot be null or empty. By default it is set to
              * a random {@code UUID}.
+             * @param sessionId the session identifier to use
+             * @return this builder instance
              */
             public GdbClient.SessionSettings.Builder sessionId(final String sessionId) {
                 if (null == sessionId || sessionId.isEmpty()) {
@@ -1147,6 +1208,8 @@ public abstract class GdbClient {
              * faster close operation which can be desirable if Gremlin Server has a long session timeout and a long
              * script evaluation timeout as attempts to close long run jobs can occur more rapidly. By default, this
              * value is {@code false}.
+             * @param forced whether to force close the session
+             * @return this builder instance
              */
             public GdbClient.SessionSettings.Builder forceClosed(final boolean forced) {
                 this.forceClosed = forced;

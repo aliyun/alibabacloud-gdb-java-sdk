@@ -38,11 +38,19 @@ public interface GdbLoadBalancingStrategy extends GdbHost.Listener {
 
     /**
      * Initialize the strategy with the {@link Cluster} instance and the expected host list.
+     *
+     * @param cluster the Cluster instance
+     * @param hosts the collection of hosts to use
      */
     public void initialize(final Cluster cluster, final Collection<GdbHost> hosts);
 
     /**
      * Provide an ordered list of hosts to send the given {@link RequestMessage} to.
+     *
+     * @param msg the RequestMessage to send
+     * @param isReqRead whether this is a read request
+     * @param deadHosts collection of hosts that should be considered dead
+     * @return an Iterator of hosts to try
      */
     public Iterator<GdbHost> select(final RequestMessage msg, boolean isReqRead, Collection<GdbHost> deadHosts);
 
@@ -55,12 +63,22 @@ public interface GdbLoadBalancingStrategy extends GdbHost.Listener {
         private final CopyOnWriteArrayList<GdbHost> availableReadonlyHosts = new CopyOnWriteArrayList<>();
         private final AtomicInteger index = new AtomicInteger();
 
+        /**
+         * @param cluster the Cluster instance
+         * @param hosts the collection of hosts to use
+         */
         @Override
         public void initialize(final Cluster cluster, final Collection<GdbHost> hosts) {
             this.availableMasterHosts.addAll(hosts);
             this.index.set(new Random().nextInt(Math.max(hosts.size(), 1)));
         }
 
+        /**
+         * @param msg the RequestMessage to send
+         * @param isReqRead whether this is a read request
+         * @param deadHosts collection of hosts that should be considered dead
+         * @return an Iterator of hosts to try
+         */
         @Override
         public Iterator<GdbHost> select(final RequestMessage msg, boolean isReqRead, Collection<GdbHost> deadHosts) {
             final List<GdbHost> hosts = new ArrayList<>();
@@ -111,6 +129,9 @@ public interface GdbLoadBalancingStrategy extends GdbHost.Listener {
             };
         }
 
+        /**
+         * @param host the host that became available
+         */
         @Override
         public void onAvailable(final GdbHost host) {
             logger.warn("onAvailable on {}", host);
@@ -121,6 +142,9 @@ public interface GdbLoadBalancingStrategy extends GdbHost.Listener {
             }
         }
 
+        /**
+         * @param host the host that became unavailable
+         */
         @Override
         public void onUnavailable(final GdbHost host) {
             logger.warn("onUnavailable on {}", host);

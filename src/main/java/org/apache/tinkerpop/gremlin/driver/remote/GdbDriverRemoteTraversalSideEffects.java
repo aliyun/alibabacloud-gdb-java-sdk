@@ -48,6 +48,10 @@ public class GdbDriverRemoteTraversalSideEffects extends AbstractRemoteTraversal
     private final CompletableFuture<Map<String,Object>> statusAttributes;
 
     /**
+     * @param client the GDB client
+     * @param serverSideEffect the server-side effect UUID
+     * @param host the host that produced the side effects
+     * @param ready a future that completes when side effects are ready
      * @deprecated As of release 3.4.0, replaced by {@link #GdbDriverRemoteTraversalSideEffects(GdbClient, GdbResultSet)}
      */
     @Deprecated
@@ -71,6 +75,8 @@ public class GdbDriverRemoteTraversalSideEffects extends AbstractRemoteTraversal
     /**
      * Gets the status attributes from the response from the server. This method will block until all results have
      * been retrieved.
+     *
+     * @return a Map containing the status attributes
      */
     public Map<String,Object> statusAttributes() {
         // wait for the read to complete (i.e. iteration on the server) before allowing the caller to get the
@@ -78,6 +84,12 @@ public class GdbDriverRemoteTraversalSideEffects extends AbstractRemoteTraversal
         return statusAttributes.join();
     }
 
+    /**
+     * @param key the key of the side-effect to retrieve
+     * @param <V> the type of the side-effect value
+     * @return the side-effect value
+     * @throws IllegalArgumentException if the key does not exist
+     */
     @Override
     public <V> V get(final String key) throws IllegalArgumentException {
         // wait for the read to complete (i.e. iteration on the server) before allowing the caller to get the
@@ -122,6 +134,9 @@ public class GdbDriverRemoteTraversalSideEffects extends AbstractRemoteTraversal
         return (V) sideEffects.get(key);
     }
 
+    /**
+     * @return the set of side-effect keys available
+     */
     @Override
     public Set<String> keys() {
         // wait for the read to complete (i.e. iteration on the server) before allowing the caller to get the
@@ -161,6 +176,9 @@ public class GdbDriverRemoteTraversalSideEffects extends AbstractRemoteTraversal
         return keys;
     }
 
+    /**
+     * @throws Exception if there is an error closing the side effects
+     */
     @Override
     public void close() throws Exception {
         if (!closed) {
@@ -178,6 +196,9 @@ public class GdbDriverRemoteTraversalSideEffects extends AbstractRemoteTraversal
         }
     }
 
+    /**
+     * @return a string representation of these side effects
+     */
     @Override
     public String toString() {
         // have to override the implementation from TraversalSideEffects because it relies on calls to keys() as

@@ -39,12 +39,12 @@ import java.util.stream.StreamSupport;
  * therefore may not be available immediately.  As such, {@code ResultSet} provides access to a a number
  * of functions that help to work with the asynchronous nature of the data streaming back.  Data from results
  * is stored in an {@link Result} which can be used to retrieve the item once it is on the client side.
- * <p/>
+ * <p>
  * Note that a {@code ResultSet} is a forward-only stream only so depending on how the methods are called and
  * interacted with, it is possible to return partial bits of the total response (e.g. calling {@link #one()} followed
  * by {@link #all()} will make it so that the {@link List} of results returned from {@link #all()} have one
  * {@link Result} missing from the total set as it was already retrieved by {@link #one}.
- * <p/>
+ * <p>
  * This class is not thread-safe.
  */
 public class GdbResultSet implements Iterable<Result> {
@@ -65,10 +65,16 @@ public class GdbResultSet implements Iterable<Result> {
         this.originalRequestMessage = originalRequestMessage;
     }
 
+    /**
+     * @return the original request message that generated this result set
+     */
     public RequestMessage getOriginalRequestMessage() {
         return originalRequestMessage;
     }
 
+    /**
+     * @return the host that provided this result set
+     */
     public GdbHost getHost() {
         return host;
     }
@@ -76,6 +82,8 @@ public class GdbResultSet implements Iterable<Result> {
     /**
      * Returns a future that will complete when {@link #allItemsAvailable()} is {@code true} and will contain the
      * attributes from the response.
+     *
+     * @return a CompletableFuture containing the status attributes
      */
     public CompletableFuture<Map<String,Object>> statusAttributes() {
         final CompletableFuture<Map<String,Object>> attrs = new CompletableFuture<>();
@@ -85,6 +93,8 @@ public class GdbResultSet implements Iterable<Result> {
 
     /**
      * Determines if all items have been returned to the client.
+     *
+     * @return true if all items are available, false otherwise
      */
     public boolean allItemsAvailable() {
         return readCompleted.isDone();
@@ -92,6 +102,8 @@ public class GdbResultSet implements Iterable<Result> {
 
     /**
      * Returns a future that will complete when all items have been returned from the server.
+     *
+     * @return a CompletableFuture that completes when all items are available
      */
     public CompletableFuture<Void> allItemsAvailableAsync() {
         final CompletableFuture<Void> allAvailable = new CompletableFuture<>();
@@ -105,6 +117,8 @@ public class GdbResultSet implements Iterable<Result> {
 
     /**
      * Gets the number of items available on the client.
+     *
+     * @return the number of items currently available
      */
     public int getAvailableItemCount() {
         return resultQueue.size();
@@ -112,6 +126,8 @@ public class GdbResultSet implements Iterable<Result> {
 
     /**
      * Get the next {@link Result} from the stream, blocking until one is available.
+     *
+     * @return the next Result, or null if no more results are available
      */
     public Result one()  {
         final List<Result> results = some(1).join();
@@ -125,6 +141,9 @@ public class GdbResultSet implements Iterable<Result> {
      * The returned {@link CompletableFuture} completes when the number of items specified are available.  The
      * number returned will be equal to or less than that number.  They will only be less if the stream is
      * completed and there are less than that number specified available.
+     *
+     * @param items the number of items to retrieve
+     * @return a CompletableFuture containing the requested number of results
      */
     public CompletableFuture<List<Result>> some(final int items) {
         return resultQueue.await(items);
@@ -135,6 +154,8 @@ public class GdbResultSet implements Iterable<Result> {
      * entire result has been accounted for on the client. While this method is named "all" it really refers to
      * retrieving all remaining items in the set.  For large result sets it is preferred to use
      * {@link Iterator} or {@link Stream} options, as the results will be held in memory at once.
+     *
+     * @return a CompletableFuture containing all remaining results
      */
     public CompletableFuture<List<Result>> all() {
         return readCompleted.thenApplyAsync(it -> {
@@ -146,6 +167,8 @@ public class GdbResultSet implements Iterable<Result> {
 
     /**
      * Stream items with a blocking iterator.
+     *
+     * @return a Stream of results
      */
     public Stream<Result> stream() {
         return StreamSupport.stream(Spliterators.spliteratorUnknownSize(iterator(),
@@ -155,7 +178,7 @@ public class GdbResultSet implements Iterable<Result> {
     /**
      * Returns a blocking iterator of the items streaming from the server to the client. This {@link Iterator} will
      * consume results as they arrive and leaving the {@code ResultSet} empty when complete.
-     * <p/>
+     * <p>
      * The returned {@link Iterator} does not support the {@link Iterator#remove} method.
      */
     @Override

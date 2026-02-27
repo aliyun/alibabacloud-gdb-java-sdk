@@ -47,6 +47,8 @@ public interface GdbChannelizer extends ChannelHandler {
 
     /**
      * Initializes the {@code GdbChannelizer}. Called just after construction.
+     *
+     * @param connection the connection to initialize
      */
     public void init(final GdbConnection connection);
 
@@ -55,12 +57,16 @@ public interface GdbChannelizer extends ChannelHandler {
      * {@link GdbConnection} already calls {@code Channel.close()} so there is no need to call that method here.
      * An implementation will typically use this method to send a {@code GdbChannelizer} specific message to the
      * server to notify of shutdown coming from the client side (e.g. a "close" websocket frame).
+     *
+     * @param channel the channel to close
      */
     public void close(final Channel channel);
 
     /**
      * Create a message for the driver to use as a "keep-alive" for the connection. This method will only be used if
      * {@link #supportsKeepAlive()} is {@code true}.
+     *
+     * @return the keep-alive message object
      */
     public default Object createKeepAliveMessage() {
         return null;
@@ -68,6 +74,8 @@ public interface GdbChannelizer extends ChannelHandler {
 
     /**
      * Determines if the channelizer supports a method for keeping the connection to the server alive.
+     *
+     * @return true if keep-alive is supported, false otherwise
      */
     public default boolean supportsKeepAlive() {
         return false;

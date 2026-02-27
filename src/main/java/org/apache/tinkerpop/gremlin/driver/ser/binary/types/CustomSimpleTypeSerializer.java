@@ -69,8 +69,8 @@ public abstract class CustomSimpleTypeSerializer<T> implements CustomTypeSeriali
      * Reads a non-nullable value according to the type format.
      * @param buffer A buffer which reader index has been set to the beginning of the {value}.
      * @param context The binary writer.
-     * @return
-     * @throws SerializationException
+     * @return the deserialized value
+     * @throws SerializationException if an error occurs during deserialization
      */
     protected abstract T readValue(final ByteBuf buffer, final GraphBinaryReader context) throws SerializationException;
 
@@ -102,7 +102,7 @@ public abstract class CustomSimpleTypeSerializer<T> implements CustomTypeSeriali
      * @param value A non-nullable value.
      * @param buffer The buffer allocator to use.
      * @param context The binary writer.
-     * @throws SerializationException
+     * @throws SerializationException if an error occurs during serialization
      */
     protected abstract void writeValue(final T value, final ByteBuf buffer, final GraphBinaryWriter context) throws SerializationException;
 }

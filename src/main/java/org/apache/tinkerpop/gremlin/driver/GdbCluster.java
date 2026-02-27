@@ -91,11 +91,14 @@ public final class GdbCluster {
      * Creates a {@link GdbClient.ClusteredClient} instance to this {@code Cluster}, meaning requests will be routed to
      * one or more servers (depending on the cluster configuration), where each request represents the entirety of a
      * transaction.  A commit or rollback (in case of error) is automatically executed at the end of the request.
-     * <p/>
+     * <p>
      * Note that calling this method does not imply that a connection is made to the server itself at this point.
      * Therefore, if there is only one server specified in the {@code Cluster} and that server is not available an
      * error will not be raised at this point.  Connections get initialized in the {@link GdbClient} when a request is
      * submitted or can be directly initialized via {@link GdbClient#init()}.
+     *
+     * @param <T> the type of GdbClient to return
+     * @return a clustered client instance
      */
     public <T extends GdbClient> T connect() {
         final GdbClient client = new GdbClient.ClusteredClient(this, GdbClient.Settings.build().create());
@@ -108,13 +111,15 @@ public final class GdbCluster {
      * a single server (randomly selected from the cluster), where the same bindings will be available on each request.
      * Requests are bound to the same thread on the server and thus transactions may extend beyond the bounds of a
      * single request.  The transactions are managed by the user and must be committed or rolled-back manually.
-     * <p/>
+     * <p>
      * Note that calling this method does not imply that a connection is made to the server itself at this point.
      * Therefore, if there is only one server specified in the {@code Cluster} and that server is not available an
      * error will not be raised at this point.  Connections get initialized in the {@link GdbClient} when a request is
      * submitted or can be directly initialized via {@link GdbClient#init()}.
      *
+     * @param <T> the type of GdbClient to return
      * @param sessionId user supplied id for the session which should be unique (a UUID is ideal).
+     * @return a sessioned client instance
      */
     public <T extends GdbClient> T connect(final String sessionId) {
         return connect(sessionId, false);
@@ -127,7 +132,7 @@ public final class GdbCluster {
      * single request.  If {@code manageTransactions} is set to {@code false} then transactions are managed by the
      * user and must be committed or rolled-back manually. When set to {@code true} the transaction is committed or
      * rolled-back at the end of each request.
-     * <p/>
+     * <p>
      * Note that calling this method does not imply that a connection is made to the server itself at this point.
      * Therefore, if there is only one server specified in the {@code Cluster} and that server is not available an
      * error will not be raised at this point.  Connections get initialized in the {@link GdbClient} when a request is
@@ -146,6 +151,10 @@ public final class GdbCluster {
 
     /**
      * Creates a new {@link GdbClient} based on the settings provided.
+     *
+     * @param <T> the type of GdbClient to return
+     * @param settings the client settings to use
+     * @return a client instance configured with the provided settings
      */
     public <T extends GdbClient> T connect(final GdbClient.Settings settings) {
         final GdbClient client = settings.getSession().isPresent() ? new GdbClient.SessionedClient(this, settings) :
@@ -251,6 +260,8 @@ public final class GdbCluster {
 
     /**
      * Create a {@code Cluster} with all default settings which will connect to one contact point at {@code localhost}.
+     *
+     * @return a configured GdbCluster instance
      */
     public static GdbCluster open() {
         return build("localhost").create();
@@ -258,6 +269,9 @@ public final class GdbCluster {
 
     /**
      * Create a {@code Cluster} from Apache Configurations.
+     *
+     * @param conf the Apache Configuration to use
+     * @return a configured GdbCluster instance
      */
     public static GdbCluster open(final Configuration conf) {
         return getBuilderFromSettings(GdbSettings.from(conf)).create();
@@ -265,6 +279,10 @@ public final class GdbCluster {
 
     /**
      * Create a {@code Cluster} using a YAML-based configuration file.
+     *
+     * @param configurationFile the path to the YAML configuration file
+     * @return a configured {@code GdbCluster} instance
+     * @throws Exception if the configuration file cannot be read or parsed
      */
     public static GdbCluster open(final String configurationFile) throws Exception {
         final File file = new File(configurationFile);
@@ -286,6 +304,8 @@ public final class GdbCluster {
     /**
      * Determines if the {@code Cluster} is in the process of closing given a call to {@link #close} or
      * {@link #closeAsync()}.
+     *
+     * @return {@code true} if the cluster is closing
      */
     public boolean isClosing() {
         return manager.isClosing();
@@ -294,6 +314,8 @@ public final class GdbCluster {
     /**
      * Determines if the {@code Cluster} has completed its closing process after a call to {@link #close} or
      * {@link #closeAsync()}.
+     *
+     * @return {@code true} if the cluster is closed
      */
     public boolean isClosed() {
         return manager.isClosing() && manager.close().isDone();
@@ -305,6 +327,8 @@ public final class GdbCluster {
      * requests that succeed in reaching a server at the {@link GdbHost} or {@link GdbClient#init()} is called which
      * initializes the {@link GdbConnectionPool} for the {@link GdbClient} itself.  The number of available hosts returned
      * from this method will change as different servers come on and offline.
+     *
+     * @return an unmodifiable list of available host URIs
      */
     public List<URI> availableHosts() {
         return Collections.unmodifiableList(allMasterHosts().stream()
@@ -315,6 +339,8 @@ public final class GdbCluster {
 
     /**
      * Gets the path to the Gremlin service.
+     *
+     * @return the path to the Gremlin service
      */
     public String getPath() {
         return manager.path;
@@ -322,6 +348,8 @@ public final class GdbCluster {
 
     /**
      * Size of the pool for handling request/response operations.
+     *
+     * @return the NIO pool size
      */
     public int getNioPoolSize() {
         return manager.nioPoolSize;
@@ -329,6 +357,8 @@ public final class GdbCluster {
 
     /**
      * Size of the pool for handling background work.
+     *
+     * @return the worker pool size
      */
     public int getWorkerPoolSize() {
         return manager.workerPoolSize;
@@ -336,6 +366,8 @@ public final class GdbCluster {
 
     /**
      * Get the {@link MessageSerializer} MIME types supported.
+     *
+     * @return an array of supported MIME types
      */
     public String[] getSerializers() {
         return getSerializer().mimeTypesSupported();
@@ -343,6 +375,8 @@ public final class GdbCluster {
 
     /**
      * Determines if connectivity over SSL is enabled.
+     *
+     * @return {@code true} if SSL is enabled
      */
     public boolean isSslEnabled() {
         return manager.connectionPoolSettings.enableSsl;
@@ -351,6 +385,8 @@ public final class GdbCluster {
     /**
      * Gets the minimum number of in-flight requests that can occur on a {@link GdbConnection} before it is considered
      * for closing on return to the {@link GdbConnectionPool}.
+     *
+     * @return the minimum number of in-flight requests per connection
      */
     public int getMinInProcessPerConnection() {
         return manager.connectionPoolSettings.minInProcessPerConnection;
@@ -358,6 +394,8 @@ public final class GdbCluster {
 
     /**
      * Gets the maximum number of in-flight requests that can occur on a {@link GdbConnection}.
+     *
+     * @return the maximum number of in-flight requests per connection
      */
     public int getMaxInProcessPerConnection() {
         return manager.connectionPoolSettings.maxInProcessPerConnection;
@@ -365,6 +403,8 @@ public final class GdbCluster {
 
     /**
      * Gets the maximum number of times that a {@link GdbConnection} can be borrowed from the pool simultaneously.
+     *
+     * @return the maximum simultaneous usage per connection
      */
     public int maxSimultaneousUsagePerConnection() {
         return manager.connectionPoolSettings.maxSimultaneousUsagePerConnection;
@@ -373,6 +413,8 @@ public final class GdbCluster {
     /**
      * Gets the minimum number of times that a {@link GdbConnection} should be borrowed from the pool before it falls
      * under consideration for closing.
+     *
+     * @return the minimum simultaneous usage per connection
      */
     public int minSimultaneousUsagePerConnection() {
         return manager.connectionPoolSettings.minSimultaneousUsagePerConnection;
@@ -380,6 +422,8 @@ public final class GdbCluster {
 
     /**
      * Gets the maximum size that the {@link GdbConnectionPool} can grow.
+     *
+     * @return the maximum connection pool size
      */
     public int maxConnectionPoolSize() {
         return manager.connectionPoolSettings.maxSize;
@@ -387,6 +431,8 @@ public final class GdbCluster {
 
     /**
      * Gets the minimum size of the {@link GdbConnectionPool}.
+     *
+     * @return the minimum connection pool size
      */
     public int minConnectionPoolSize() {
         return manager.connectionPoolSettings.minSize;
@@ -394,6 +440,8 @@ public final class GdbCluster {
 
     /**
      * Gets the override for the server setting that determines how many results are returned per batch.
+     *
+     * @return the result iteration batch size
      */
     public int getResultIterationBatchSize() {
         return manager.connectionPoolSettings.resultIterationBatchSize;
@@ -401,6 +449,8 @@ public final class GdbCluster {
 
     /**
      * Gets the maximum amount of time to wait for a connection to be borrowed from the connection pool.
+     *
+     * @return the maximum wait time in milliseconds
      */
     public int getMaxWaitForConnection() {
         return manager.connectionPoolSettings.maxWaitForConnection;
@@ -408,6 +458,8 @@ public final class GdbCluster {
 
     /**
      * Gets how long a session will stay open assuming the current connection actually is configured for their use.
+     *
+     * @return the maximum wait time for session close in milliseconds
      */
     public int getMaxWaitForSessionClose() {
         return manager.connectionPoolSettings.maxWaitForSessionClose;
@@ -415,6 +467,8 @@ public final class GdbCluster {
 
     /**
      * Gets the maximum size in bytes of any request sent to the server.
+     *
+     * @return the maximum content length in bytes
      */
     public int getMaxContentLength() {
         return manager.connectionPoolSettings.maxContentLength;
@@ -422,6 +476,8 @@ public final class GdbCluster {
 
     /**
      * Gets the {@link GdbChannelizer} implementation to use on the client when creating a {@link GdbConnection}.
+     *
+     * @return the fully qualified class name of the channelizer
      */
     public String getChannelizer() {
         return manager.connectionPoolSettings.channelizer;
@@ -429,6 +485,8 @@ public final class GdbCluster {
 
     /**
      * Gets time in milliseconds to wait between retries when attempting to reconnect to a dead host.
+     *
+     * @return the reconnect interval in milliseconds
      */
     public int getReconnectInterval() {
         return manager.connectionPoolSettings.reconnectInterval;
@@ -437,6 +495,8 @@ public final class GdbCluster {
     /**
      * Gets time in milliseconds to wait after the last message is sent over a connection before sending a keep-alive
      * message to the server.
+     *
+     * @return the keep-alive interval in milliseconds
      */
     public long getKeepAliveInterval() {
         return manager.connectionPoolSettings.keepAliveInterval;
@@ -444,6 +504,8 @@ public final class GdbCluster {
 
     /**
      * Specifies the load balancing strategy to use on the client side.
+     *
+     * @return the class of the load balancing strategy
      */
     public Class<? extends GdbLoadBalancingStrategy> getGdbLoadBalancingStrategy() {
         return manager.loadBalancingStrategy.getClass();
@@ -451,6 +513,8 @@ public final class GdbCluster {
 
     /**
      * Gets the port that the Gremlin Servers will be listening on.
+     *
+     * @return the port number
      */
     public int getPort() {
         return manager.port;
@@ -458,6 +522,8 @@ public final class GdbCluster {
 
     /**
      * Gets a list of all the configured hosts.
+     *
+     * @return an unmodifiable collection of all master hosts
      */
     public Collection<GdbHost> allMasterHosts() {
         return Collections.unmodifiableCollection(manager.allMasterHosts());
@@ -629,6 +695,9 @@ public final class GdbCluster {
 
         /**
          * Size of the pool for handling request/response operations.  Defaults to the number of available processors.
+         *
+         * @param nioPoolSize the size of the NIO pool
+         * @return this {@link Builder}
          */
         public Builder nioPoolSize(final int nioPoolSize) {
             this.nioPoolSize = nioPoolSize;
@@ -638,6 +707,9 @@ public final class GdbCluster {
         /**
          * Size of the pool for handling background work.  Defaults to the number of available processors multiplied
          * by 2
+         *
+         * @param workerPoolSize the size of the worker pool
+         * @return this {@link Builder}
          */
         public Builder workerPoolSize(final int workerPoolSize) {
             this.workerPoolSize = workerPoolSize;
@@ -646,6 +718,9 @@ public final class GdbCluster {
 
         /**
          * The path to the Gremlin service on the host which is "/gremlin" by default.
+         *
+         * @param path the path to the Gremlin service
+         * @return this {@link Builder}
          */
         public Builder path(final String path) {
             this.path = path;
@@ -656,6 +731,9 @@ public final class GdbCluster {
          * Set the {@link MessageSerializer} to use given the exact name of a {@link Serializers} enum.  Note that
          * setting this value this way will not allow specific configuration of the serializer itself.  If specific
          * configuration is required * please use {@link #serializer(MessageSerializer)}.
+         *
+         * @param mimeType the MIME type of the serializer
+         * @return this {@link Builder}
          */
         public Builder serializer(final String mimeType) {
             serializer = Serializers.valueOf(mimeType).simpleInstance();
@@ -665,6 +743,9 @@ public final class GdbCluster {
         /**
          * Set the {@link MessageSerializer} to use via the {@link Serializers} enum. If specific configuration is
          * required please use {@link #serializer(MessageSerializer)}.
+         *
+         * @param mimeType the MIME type of the serializer
+         * @return this {@link Builder}
          */
         public Builder serializer(final Serializers mimeType) {
             serializer = mimeType.simpleInstance();
@@ -673,6 +754,9 @@ public final class GdbCluster {
 
         /**
          * Sets the {@link MessageSerializer} to use.
+         *
+         * @param serializer the message serializer to use
+         * @return this {@link Builder}
          */
         public Builder serializer(final MessageSerializer serializer) {
             this.serializer = serializer;
@@ -682,6 +766,9 @@ public final class GdbCluster {
         /**
          * Enables connectivity over SSL - note that the server should be configured with SSL turned on for this
          * setting to work properly.
+         *
+         * @param enable whether to enable SSL
+         * @return this {@link Builder}
          */
         public Builder enableSsl(final boolean enable) {
             this.enableSsl = enable;
@@ -693,6 +780,9 @@ public final class GdbCluster {
          * allowed by the {@link Builder}. If this value is set to something other than {@code null} then all other
          * related SSL settings are ignored. The {@link #enableSsl} setting should still be set to {@code true} for
          * this setting to take effect.
+         *
+         * @param sslContext the SSL context to use
+         * @return this {@link Builder}
          */
         public Builder sslContext(final SslContext sslContext) {
             this.sslContext = sslContext;
@@ -702,6 +792,9 @@ public final class GdbCluster {
         /**
          * File location for a SSL Certificate Chain to use when SSL is enabled. If this value is not provided and
          * SSL is enabled, the default {@link TrustManager} will be used.
+         *
+         * @param certificateChainFile the path to the certificate chain file
+         * @return this {@link Builder}
          * @deprecated As of release 3.2.10, replaced by {@link #trustStore}
          */
         @Deprecated
@@ -714,6 +807,9 @@ public final class GdbCluster {
          * Length of time in milliseconds to wait on an idle connection before sending a keep-alive request. This
          * setting is only relevant to {@link GdbChannelizer} implementations that return {@code true} for
          * {@link GdbChannelizer#supportsKeepAlive()}.  Set to zero to disable this feature.
+         *
+         * @param keepAliveInterval the keep-alive interval in milliseconds
+         * @return this {@link Builder}
          */
         public Builder keepAliveInterval(final long keepAliveInterval) {
             this.keepAliveInterval = keepAliveInterval;
@@ -727,6 +823,9 @@ public final class GdbCluster {
 
         /**
          * The X.509 certificate chain file in PEM format.
+         *
+         * @param keyCertChainFile the path to the key certificate chain file
+         * @return this {@link Builder}
          * @deprecated As of release 3.2.10, replaced by {@link #keyStore}
          */
         @Deprecated
@@ -737,6 +836,9 @@ public final class GdbCluster {
 
         /**
          * The PKCS#8 private key file in PEM format.
+         *
+         * @param keyFile the path to the key file
+         * @return this {@link Builder}
          * @deprecated As of release 3.2.10, replaced by {@link #keyStore}
          */
         @Deprecated
@@ -747,6 +849,9 @@ public final class GdbCluster {
 
         /**
          * The password of the {@link #keyFile}, or {@code null} if it's not password-protected.
+         *
+         * @param keyPassword the password for the key file
+         * @return this {@link Builder}
          * @deprecated As of release 3.2.10, replaced by {@link #keyStorePassword}
          */
         @Deprecated
@@ -757,6 +862,9 @@ public final class GdbCluster {
 
         /**
          * The file location of the private key in JKS or PKCS#12 format.
+         *
+         * @param keyStore the path to the keystore file
+         * @return this {@link Builder}
          */
         public Builder keyStore(final String keyStore) {
             this.keyStore = keyStore;
@@ -765,6 +873,9 @@ public final class GdbCluster {
 
         /**
          * The password of the {@link #keyStore}, or {@code null} if it's not password-protected.
+         *
+         * @param keyStorePassword the password for the keystore
+         * @return this {@link Builder}
          */
         public Builder keyStorePassword(final String keyStorePassword) {
             this.keyStorePassword = keyStorePassword;
@@ -774,6 +885,9 @@ public final class GdbCluster {
         /**
          * The file location for a SSL Certificate Chain to use when SSL is enabled. If
          * this value is not provided and SSL is enabled, the default {@link TrustManager} will be used.
+         *
+         * @param trustStore the path to the truststore file
+         * @return this {@link Builder}
          */
         public Builder trustStore(final String trustStore) {
             this.trustStore = trustStore;
@@ -782,6 +896,9 @@ public final class GdbCluster {
 
         /**
          * The password of the {@link #trustStore}, or {@code null} if it's not password-protected.
+         *
+         * @param trustStorePassword the password for the truststore
+         * @return this {@link Builder}
          */
         public Builder trustStorePassword(final String trustStorePassword) {
             this.trustStorePassword = trustStorePassword;
@@ -790,6 +907,9 @@ public final class GdbCluster {
 
         /**
          * The format of the {@link #keyStore}, either {@code JKS} or {@code PKCS12}
+         *
+         * @param keyStoreType the type of the keystore
+         * @return this {@link Builder}
          */
         public Builder keyStoreType(final String keyStoreType) {
             this.keyStoreType = keyStoreType;
@@ -800,6 +920,9 @@ public final class GdbCluster {
          * A list of SSL protocols to enable. @see <a href=
          *      "https://docs.oracle.com/javase/8/docs/technotes/guides/security/SunProviders.html#SunJSSE_Protocols">JSSE
          *      Protocols</a>
+         *
+         * @param sslEnabledProtocols the list of SSL protocols to enable
+         * @return this {@link Builder}
          */
         public Builder sslEnabledProtocols(final List<String> sslEnabledProtocols) {
             this.sslEnabledProtocols = sslEnabledProtocols;
@@ -810,6 +933,9 @@ public final class GdbCluster {
          * A list of cipher suites to enable. @see <a href=
          *      "https://docs.oracle.com/javase/8/docs/technotes/guides/security/SunProviders.html#SupportedCipherSuites">Cipher
          *      Suites</a>
+         *
+         * @param sslCipherSuites the list of SSL cipher suites to enable
+         * @return this {@link Builder}
          */
         public Builder sslCipherSuites(final List<String> sslCipherSuites) {
             this.sslCipherSuites = sslCipherSuites;
@@ -818,6 +944,9 @@ public final class GdbCluster {
 
         /**
          * If true, trust all certificates and do not perform any validation.
+         *
+         * @param sslSkipCertValidation whether to skip SSL certificate validation
+         * @return this {@link Builder}
          */
         public Builder sslSkipCertValidation(final boolean sslSkipCertValidation) {
             this.sslSkipCertValidation = sslSkipCertValidation;
@@ -827,6 +956,9 @@ public final class GdbCluster {
         /**
          * The minimum number of in-flight requests that can occur on a {@link GdbConnection} before it is considered
          * for closing on return to the {@link GdbConnectionPool}.
+         *
+         * @param minInProcessPerConnection the minimum number of in-process requests per connection
+         * @return this {@link Builder}
          */
         public Builder minInProcessPerConnection(final int minInProcessPerConnection) {
             this.minInProcessPerConnection = minInProcessPerConnection;
@@ -840,6 +972,9 @@ public final class GdbCluster {
          * the total number of requests on a {@link GdbConnection}.  In other words, a {@link GdbConnection} might
          * be borrowed once to have multiple requests executed against it.  This number controls the maximum
          * number of requests whereas {@link #maxInProcessPerConnection} controls the times borrowed.
+         *
+         * @param maxInProcessPerConnection the maximum number of in-process requests per connection
+         * @return this {@link Builder}
          */
         public Builder maxInProcessPerConnection(final int maxInProcessPerConnection) {
             this.maxInProcessPerConnection = maxInProcessPerConnection;
@@ -852,6 +987,9 @@ public final class GdbCluster {
          * {@link GdbConnection} may queue requests too quickly, rather than wait for an available {@link GdbConnection}
          * or create a fresh one.  If set too small, the {@link GdbConnection} will show as busy very quickly thus
          * forcing waits for available {@link GdbConnection} instances in the pool when there is more capacity available.
+         *
+         * @param maxSimultaneousUsagePerConnection the maximum simultaneous usage per connection
+         * @return this {@link Builder}
          */
         public Builder maxSimultaneousUsagePerConnection(final int maxSimultaneousUsagePerConnection) {
             this.maxSimultaneousUsagePerConnection = maxSimultaneousUsagePerConnection;
@@ -865,6 +1003,9 @@ public final class GdbCluster {
          * too large and {@link GdbConnection} that isn't busy will continue to consume resources when it is not being
          * used.  Set too small and {@link GdbConnection} instances will be destroyed when the driver might still be
          * busy.
+         *
+         * @param minSimultaneousUsagePerConnection the minimum simultaneous usage per connection
+         * @return this {@link Builder}
          */
         public Builder minSimultaneousUsagePerConnection(final int minSimultaneousUsagePerConnection) {
             this.minSimultaneousUsagePerConnection = minSimultaneousUsagePerConnection;
@@ -873,6 +1014,9 @@ public final class GdbCluster {
 
         /**
          * The maximum size that the {@link GdbConnectionPool} can grow.
+         *
+         * @param maxSize the maximum connection pool size
+         * @return this {@link Builder}
          */
         public Builder maxConnectionPoolSize(final int maxSize) {
             this.maxConnectionPoolSize = maxSize;
@@ -882,6 +1026,9 @@ public final class GdbCluster {
         /**
          * The minimum size of the {@link GdbConnectionPool}.  When the {@link GdbClient} is started, {@link GdbConnection}
          * objects will be initially constructed to this size.
+         *
+         * @param minSize the minimum connection pool size
+         * @return this {@link Builder}
          */
         public Builder minConnectionPoolSize(final int minSize) {
             this.minConnectionPoolSize = minSize;
@@ -890,6 +1037,9 @@ public final class GdbCluster {
 
         /**
          * Override the server setting that determines how many results are returned per batch.
+         *
+         * @param size the result iteration batch size
+         * @return this {@link Builder}
          */
         public Builder resultIterationBatchSize(final int size) {
             this.resultIterationBatchSize = size;
@@ -898,6 +1048,9 @@ public final class GdbCluster {
 
         /**
          * The maximum amount of time to wait for a connection to be borrowed from the connection pool.
+         *
+         * @param maxWait the maximum wait time in milliseconds
+         * @return this {@link Builder}
          */
         public Builder maxWaitForConnection(final int maxWait) {
             this.maxWaitForConnection = maxWait;
@@ -908,6 +1061,9 @@ public final class GdbCluster {
          * If the connection is using a "session" this setting represents the amount of time in milliseconds to wait
          * for that session to close before timing out where the default value is 3000. Note that the server will
          * eventually clean up dead sessions itself on expiration of the session or during shutdown.
+         *
+         * @param maxWait the maximum wait time for session close in milliseconds
+         * @return this {@link Builder}
          */
         public Builder maxWaitForSessionClose(final int maxWait) {
             this.maxWaitForSessionClose = maxWait;
@@ -917,6 +1073,9 @@ public final class GdbCluster {
         /**
          * The maximum size in bytes of any request sent to the server.   This number should not exceed the same
          * setting defined on the server.
+         *
+         * @param maxContentLength the maximum content length in bytes
+         * @return this {@link Builder}
          */
         public Builder maxContentLength(final int maxContentLength) {
             this.maxContentLength = maxContentLength;
@@ -925,6 +1084,9 @@ public final class GdbCluster {
 
         /**
          * Specify the {@link GdbChannelizer} implementation to use on the client when creating a {@link GdbConnection}.
+         *
+         * @param channelizerClass the fully qualified class name of the channelizer
+         * @return this {@link Builder}
          */
         public Builder channelizer(final String channelizerClass) {
             this.channelizer = channelizerClass;
@@ -933,6 +1095,9 @@ public final class GdbCluster {
 
         /**
          * Specify the {@link GdbChannelizer} implementation to use on the client when creating a {@link GdbConnection}.
+         *
+         * @param channelizerClass the class of the channelizer
+         * @return this {@link Builder}
          */
         public Builder channelizer(final Class channelizerClass) {
             return channelizer(channelizerClass.getCanonicalName());
@@ -943,6 +1108,9 @@ public final class GdbCluster {
          * to return quickly with the least amount of overhead possible. By default, the script sends an empty string.
          * If the graph does not support that sort of script because it requires all scripts to include a reference
          * to a graph then a good option might be {@code g.inject()}.
+         *
+         * @param script the validation request script
+         * @return this {@link Builder}
          */
         public Builder validationRequest(final String script) {
             validationRequest = script;
@@ -951,6 +1119,9 @@ public final class GdbCluster {
 
         /**
          * Time in milliseconds to wait between retries when attempting to reconnect to a dead host.
+         *
+         * @param interval the reconnect interval in milliseconds
+         * @return this {@link Builder}
          */
         public Builder reconnectInterval(final int interval) {
             this.reconnectInterval = interval;
@@ -959,6 +1130,9 @@ public final class GdbCluster {
 
         /**
          * Specifies the load balancing strategy to use on the client side.
+         *
+         * @param loadBalancingStrategy the load balancing strategy to use
+         * @return this {@link Builder}
          */
         public Builder loadBalancingStrategy(final GdbLoadBalancingStrategy loadBalancingStrategy) {
             this.loadBalancingStrategy = loadBalancingStrategy;
@@ -967,6 +1141,9 @@ public final class GdbCluster {
 
         /**
          * Specifies parameters for authentication to Gremlin Server.
+         *
+         * @param authProps the authentication properties
+         * @return this {@link Builder}
          */
         public Builder authProperties(final AuthProperties authProps) {
             this.authProps = authProps;
@@ -976,6 +1153,10 @@ public final class GdbCluster {
         /**
          * Sets the {@link AuthProperties.Property#USERNAME} and {@link AuthProperties.Property#PASSWORD} properties
          * for authentication to Gremlin Server.
+         *
+         * @param username the username for authentication
+         * @param password the password for authentication
+         * @return this {@link Builder}
          */
         public Builder credentials(final String username, final String password) {
             authProps = authProps.with(AuthProperties.Property.USERNAME, username).with(AuthProperties.Property.PASSWORD, password);
@@ -984,6 +1165,9 @@ public final class GdbCluster {
 
         /**
          * Sets the {@link AuthProperties.Property#PROTOCOL} properties for authentication to Gremlin Server.
+         *
+         * @param protocol the authentication protocol
+         * @return this {@link Builder}
          */
         public Builder protocol(final String protocol) {
             this.authProps = authProps.with(AuthProperties.Property.PROTOCOL, protocol);
@@ -992,6 +1176,9 @@ public final class GdbCluster {
 
         /**
          * Sets the {@link AuthProperties.Property#JAAS_ENTRY} properties for authentication to Gremlin Server.
+         *
+         * @param jaasEntry the JAAS entry for authentication
+         * @return this {@link Builder}
          */
         public Builder jaasEntry(final String jaasEntry) {
             this.authProps = authProps.with(AuthProperties.Property.JAAS_ENTRY, jaasEntry);
@@ -1002,6 +1189,9 @@ public final class GdbCluster {
          * Adds the address of a Gremlin Server to the list of servers a {@link GdbClient} will try to contact to send
          * requests to.  The address should be parseable by {@link InetAddress#getByName(String)}.  That's the only
          * validation performed at this point.  No connection to the host is attempted.
+         *
+         * @param address the address of the Gremlin Server
+         * @return this {@link Builder}
          */
         public Builder addMasterPoint(final String address) {
             try {
@@ -1025,6 +1215,9 @@ public final class GdbCluster {
          * Add one or more the addresses of a Gremlin Servers to the list of servers a {@link GdbClient} will try to
          * contact to send requests to.  The address should be parseable by {@link InetAddress#getByName(String)}.
          * That's the only validation performed at this point.  No connection to the host is attempted.
+         *
+         * @param addresses the addresses of the Gremlin Servers
+         * @return this {@link Builder}
          */
         public Builder addContactPoints(final String... addresses) {
             for (String address : addresses) {
@@ -1035,6 +1228,9 @@ public final class GdbCluster {
 
         /**
          * Sets the port that the Gremlin Servers will be listening on.
+         *
+         * @param port the port number
+         * @return this {@link Builder}
          */
         public Builder port(final int port) {
             this.port = port;

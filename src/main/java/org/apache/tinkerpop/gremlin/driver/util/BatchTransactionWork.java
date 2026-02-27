@@ -31,7 +31,8 @@ public interface BatchTransactionWork<T extends GdbClient, U extends GraphTraver
      * Executes all given operations against the same transaction.
      *
      * @param tx the transaction to use.
-     * throw exception when error
+     * @param g the graph traversal source to use.
+     * @throws Throwable when error
      */
     void execute(T tx, U g) throws  Throwable;
 }

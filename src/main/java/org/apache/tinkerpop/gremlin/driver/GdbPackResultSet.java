@@ -157,7 +157,7 @@ public final class GdbPackResultSet extends GdbResultSet {
     /**
      * Returns a blocking iterator of the items streaming from the server to the client. This {@link Iterator} will
      * consume results as they arrive and leaving the {@code ResultSet} empty when complete.
-     * <p/>
+     * <p>
      * The returned {@link Iterator} does not support the {@link Iterator#remove} method.
      */
     @Override

@@ -58,6 +58,8 @@ public class GDBOSSLoaderDriver {
 
 	/**
 	 * get test.loader task list {@link LoaderList}
+	 *
+	 * @return the loader list containing all loader tasks
 	 */
 	public LoaderList getLoaderList() {
 		logger.debug("request load task list");
@@ -68,6 +70,7 @@ public class GDBOSSLoaderDriver {
 	/**
 	 * get test.loader task detail, include records, errors, time and so on {@link LoaderDetail}
 	 * @param loaderId the task id in GDB server
+	 * @return the loader detail for the specified task
 	 * @throws LoaderExecption when request get errors
 	 */
 	public LoaderDetail getLoaderDetail(String loaderId) throws LoaderExecption {
@@ -85,6 +88,7 @@ public class GDBOSSLoaderDriver {
 	/**
 	 * add a new task {@link LoaderNewTask} to GDB for import graph csv data in OSS
 	 * @param task the task to load in GDB
+	 * @return the loader task ID of the newly created task
 	 * @throws LoaderExecption when fail to add task
 	 */
 	public LoaderTaskId addLoaderTask(final LoaderNewTask task) throws LoaderExecption {

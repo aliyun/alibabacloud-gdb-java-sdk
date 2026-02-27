@@ -93,9 +93,9 @@ public class GraphDbGraphBinaryMessageSerializerV1 extends GraphBinaryMessageSer
 
     /**
      * driver parse response
-     * @param msg
-     * @return
-     * @throws SerializationException
+     * @param msg the message buffer to deserialize
+     * @return the deserialized response message
+     * @throws SerializationException if an error occurs during deserialization
      */
     @Override
     public ResponseMessage deserializeResponse(final ByteBuf msg) throws SerializationException {

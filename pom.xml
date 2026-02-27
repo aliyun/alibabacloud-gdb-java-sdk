@@ -9,6 +9,11 @@
     <version>1.1.1</version>
     <packaging>jar</packaging>
 
+    <properties>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    </properties>
+
     <name>alibabacloud-gdb-java-sdk</name>
     <url>https://www.aliyun.com</url>
     <description>Aliyun GDB SDK for Java
@@ -152,25 +157,6 @@ http://www.aliyun.com</description>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-assembly-plugin</artifactId>
-                <configuration>
-                    <finalName>${project.artifactId}</finalName>
-                    <descriptors>
-                        <descriptor>assembly/assembly.xml</descriptor><!-- 指定assembly配置文件路径 -->
-                    </descriptors>
-                </configuration>
-                <executions>
-                    <execution>
-                        <id>make-assembly</id>
-                        <phase>package</phase>
-                        <goals>
-                            <goal>single</goal>
-                        </goals>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
-                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-source-plugin</artifactId>
                 <version>3.3.0</version>
                 <executions>
@@ -216,4 +202,3 @@ http://www.aliyun.com</description>
         </plugins>
     </build>
 </project>
-

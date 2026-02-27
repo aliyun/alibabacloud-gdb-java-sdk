@@ -71,7 +71,8 @@ public class GdbGroovyTranslator implements  Translator.ScriptTranslator {
     }
 
     /**
-     * Translate bytecode to parameterized script
+     * Translate bytecode to parameterized script.
+     * Represents the result of translating bytecode to a parameterized Gremlin script.
      */
     public static final class ParameterizedScriptResult {
         private final String  script;
@@ -84,6 +85,7 @@ public class GdbGroovyTranslator implements  Translator.ScriptTranslator {
 
         /**
          * Provides the script
+         * @return the script string
          */
         public String getScript() {
             return script;
@@ -91,6 +93,7 @@ public class GdbGroovyTranslator implements  Translator.ScriptTranslator {
 
         /**
          * Provides the bindings
+         * @return the bindings map
          */
         public Map<String,Object> getBindings() {
             return bindings;
@@ -174,8 +177,8 @@ public class GdbGroovyTranslator implements  Translator.ScriptTranslator {
      *   - （Recursion, No）      TraversalStrategyProxy
      *   - （Enumeration, No）    TraversalStrategy
      *   -  (Yes)                 Other
-     * @param object
-     * @return String Repres
+     * @param object the object to convert to a string representation
+     * @return String representation of the object
      */
     private String convertToString(final Object object) {
         if (object instanceof Bytecode.Binding) {

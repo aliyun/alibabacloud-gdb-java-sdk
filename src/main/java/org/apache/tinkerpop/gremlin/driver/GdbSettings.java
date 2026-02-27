@@ -97,6 +97,7 @@ final public class GdbSettings {
      * Read configuration from a file into a new {@link GdbSettings} object.
      *
      * @param stream an input stream containing a Gremlin Server YAML configuration
+     * @return a new GdbSettings object with the configuration from the stream
      */
     public static GdbSettings read(final InputStream stream) {
         Objects.requireNonNull(stream);
@@ -113,6 +114,8 @@ final public class GdbSettings {
 
     /**
      * Read configuration from a file into a new {@link GdbSettings} object.
+     * @param conf the configuration object to read from
+     * @return a new GdbSettings object with the configuration from the Configuration
      */
     public static GdbSettings from(final Configuration conf) {
         final GdbSettings settings = new GdbSettings();
